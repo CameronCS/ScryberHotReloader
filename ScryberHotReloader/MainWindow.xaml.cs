@@ -1,5 +1,7 @@
 ﻿using ICSharpCode.AvalonEdit.CodeCompletion;
 using ICSharpCode.AvalonEdit.Document;
+using ICSharpCode.AvalonEdit.Highlighting.Xshd;
+using ICSharpCode.AvalonEdit.Highlighting;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.Win32;
@@ -12,6 +14,7 @@ using System.Text;
 using System.Windows;
 using System.Windows.Documents;
 using System.Windows.Input;
+using System.Xml;
 
 namespace ScryberHotReloader {
     public partial class MainWindow : Window {
@@ -29,6 +32,32 @@ namespace ScryberHotReloader {
             HtmlEditor.TextArea.TextEntering += TextArea_TextEntering;
             ModelEditor.TextArea.TextEntered += ModelEditor_TextEntered;
             ModelEditor.TextArea.TextEntering += ModelEditor_TextEntering;
+            ModelEditor.TextArea.KeyDown += ModelEditor_KeyDown;
+            LoadHtmlHighlighting();
+            LoadCSHighlighting();
+        }
+
+        private void LoadCSHighlighting() {
+            var uri = new Uri("pack://application:,,,/XSHDFiles/CSharpDark.xshd");
+            using var stream = Application.GetResourceStream(uri)?.Stream;
+
+            if (stream != null) {
+                using var reader = XmlReader.Create(stream);
+                var highlighting = HighlightingLoader.Load(reader, HighlightingManager.Instance);
+                ModelEditor.SyntaxHighlighting = highlighting;
+            } else {
+                MessageBox.Show("Failed to load syntax highlighting file.");
+            }
+        }
+
+        private void LoadHtmlHighlighting() {
+            using var stream = Application.GetResourceStream(
+                new Uri("pack://application:,,,/XSHDFiles/HTMLDark.xshd")).Stream;
+
+            using var reader = new XmlTextReader(stream);
+            var highlighting = HighlightingLoader.Load(reader, HighlightingManager.Instance);
+
+            HtmlEditor.SyntaxHighlighting = highlighting;
         }
 
         private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e) {
@@ -42,7 +71,6 @@ namespace ScryberHotReloader {
                 }
             } catch { /* Ignore errors silently */ }
         }
-
 
         private async void Window_KeyDown(object sender, KeyEventArgs e) {
             if (Keyboard.Modifiers == ModifierKeys.Control) {
@@ -120,15 +148,15 @@ namespace ScryberHotReloader {
         }
 
         private async Task SaveHtml_Click_Async() {
+            if (string.IsNullOrEmpty(_currentFilePath)) {
+                return;
+            }
+
             _currentHtml = HtmlEditor.Text;
             File.WriteAllText(_currentFilePath, _currentHtml, Encoding.UTF8);
 
             string modelCode = ModelEditor.Text;
             object? modelInstance = CompileAndInstantiateAnyModel(modelCode);
-
-            if (modelInstance == null) {
-                return;
-            }
 
             string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmssfff");
             string output = System.IO.Path.Combine(CWD, $"preview_{timestamp}.pdf");
@@ -136,7 +164,9 @@ namespace ScryberHotReloader {
             try {
                 Document document = Document.ParseDocument(_currentFilePath);
 
-                document.Params["Model"] = modelInstance;
+                if (modelInstance != null) {
+                    document.Params["Model"] = modelInstance;
+                }
 
                 await document.SaveAsPDFAsync(output);
 
@@ -163,11 +193,15 @@ namespace ScryberHotReloader {
         }
 
         private void ModelEditor_TextEntered(object sender, TextCompositionEventArgs e) {
-            if (!char.IsLetterOrDigit(e.Text[0]) && e.Text[0] != '.') { return; }
+            if (!char.IsLetterOrDigit(e.Text[0]) && e.Text[0] != '.') {
+                return;
+            }
 
             int caret = ModelEditor.CaretOffset;
             int start = TextUtilities.GetNextCaretPosition(ModelEditor.Document, caret, LogicalDirection.Backward, CaretPositioningMode.WordStart);
-            if (start < 0) { start = 0; }
+            if (start < 0) {
+                start = 0;
+            }
 
             int length = caret - start;
             string word = length > 0 ? ModelEditor.Document.GetText(start, length) : "";
@@ -176,27 +210,52 @@ namespace ScryberHotReloader {
             IList<ICompletionData> data = _csCompletionWindow.CompletionList.CompletionData;
 
             foreach (string keyword in CSAutoComplete.CSKeyWords) {
-                if (keyword.StartsWith(word, StringComparison.InvariantCultureIgnoreCase)) { 
-                    data.Add(new CSCompletionData(keyword)); 
+                if (keyword.StartsWith(word, StringComparison.InvariantCultureIgnoreCase)) {
+                    data.Add(new CSCompletionData(keyword));
                 }
             }
 
             if (data.Count > 0) {
                 _csCompletionWindow.Show();
                 _csCompletionWindow.Closed += (o, args) => _csCompletionWindow = null;
-            } else { _csCompletionWindow = null; }
+            } else {
+                _csCompletionWindow = null;
+            }
         }
 
-
         private void ModelEditor_TextEntering(object sender, TextCompositionEventArgs e) {
-            if (_csCompletionWindow == null) { return; }
+            if (_csCompletionWindow == null) {
+                return;
+            }
 
             if (e.Text.Length > 0 && !char.IsLetterOrDigit(e.Text[0])) {
                 _csCompletionWindow.CompletionList.RequestInsertion(e);
             }
         }
 
+        private void ModelEditor_KeyDown(object sender, KeyEventArgs e) {
+            if (e.Key == Key.Enter) {
+                var caret = ModelEditor.TextArea.Caret;
+                var line = ModelEditor.Document.GetLineByOffset(caret.Offset);
+                var currentLineText = ModelEditor.Document.GetText(line.Offset, line.Length);
+
+                // Get leading whitespace
+                string indentation = new string(currentLineText.TakeWhile(char.IsWhiteSpace).ToArray());
+
+                // Insert newline and indentation
+                ModelEditor.Document.Insert(caret.Offset, Environment.NewLine + indentation);
+                caret.Offset += Environment.NewLine.Length + indentation.Length;
+
+                e.Handled = true;
+            }
+        }
+
+
         public static object? CompileAndInstantiateAnyModel(string sourceCode) {
+            if (string.IsNullOrEmpty(sourceCode)) {
+                return null;
+            }
+
             SyntaxTree syntaxTree = CSharpSyntaxTree.ParseText(sourceCode);
 
             List<MetadataReference> refs = [.. AppDomain.CurrentDomain.GetAssemblies().Where(a => !a.IsDynamic && !string.IsNullOrEmpty(a.Location)).Select(a => MetadataReference.CreateFromFile(a.Location)).Cast<MetadataReference>()];

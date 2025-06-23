@@ -124,31 +124,37 @@
         <TabControl Grid.Row="1" Grid.Column="0"
             Background="#1e1e1e" BorderThickness="1" BorderBrush="#444">
             <TabItem Header="HTML">
-                <avalonedit:TextEditor Name="HtmlEditor"
-                               FontFamily="Consolas"
-                               FontSize="14"
-                               ShowLineNumbers="True"
-                               SyntaxHighlighting="HTML"
-                               VerticalScrollBarVisibility="Auto"
-                               HorizontalScrollBarVisibility="Auto"
-                               Background="#252526"
-                               Foreground="#D4D4D4"
-                               BorderThickness="0"
-                               Padding="10"/>
+                <avalonedit:TextEditor 
+                    Name="HtmlEditor"
+                    Background="#1e1e1e"
+                    Foreground="#d4d4d4"
+                    FontFamily="Consolas"
+                    FontSize="14"
+                    ShowLineNumbers="True"
+                    SyntaxHighlighting="HTML"
+                    BorderBrush="#444"
+                    BorderThickness="1"
+                    Padding="10"
+                    HorizontalScrollBarVisibility="Auto"
+                    VerticalScrollBarVisibility="Auto"
+                />
             </TabItem>
 
             <TabItem Header="Model">
-                <avalonedit:TextEditor Name="ModelEditor"
-                           FontFamily="Consolas"
-                           FontSize="14"
-                           ShowLineNumbers="True"
-                           SyntaxHighlighting="C#"
-                           VerticalScrollBarVisibility="Auto"
-                           HorizontalScrollBarVisibility="Auto"
-                           Background="#252526"
-                           Foreground="#D4D4D4"
-                           BorderThickness="0"
-                           Padding="10"/>
+                <avalonedit:TextEditor 
+                    Name="ModelEditor"
+                    Background="#1e1e1e"
+                    Foreground="#d4d4d4"
+                    FontFamily="Consolas"
+                    FontSize="14"
+                    ShowLineNumbers="True"
+                    SyntaxHighlighting="C#"
+                    BorderBrush="#444"
+                    BorderThickness="1"
+                    Padding="10"
+                    HorizontalScrollBarVisibility="Auto"
+                    VerticalScrollBarVisibility="Auto"
+                />
             </TabItem>
         </TabControl>
 

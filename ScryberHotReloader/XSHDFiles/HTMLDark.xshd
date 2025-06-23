@@ -1,0 +1,63 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<SyntaxDefinition name="HTML" extensions=".htm;.html" xmlns="http://icsharpcode.net/sharpdevelop/syntaxdefinition/2008">
+	<Color name="Comment" foreground="#57A64A" fontStyle="italic"/>
+	<Color name="Tag" foreground="#569CD6" fontWeight="bold"/>
+	<Color name="Attribute" foreground="#9CDCFE"/>
+	<Color name="Value" foreground="#CE9178"/>
+	<Color name="Text" foreground="#D4D4D4"/>
+
+	<!-- MAIN RuleSet -->
+	<RuleSet ignoreCase="true">
+		<Span color="Comment" begin="&lt;!--" end="--&gt;" />
+		<Span color="Tag" begin="&lt;" end="&gt;" ruleSet="HtmlTag" />
+		<Rule color="Text">[^&lt;]+</Rule>
+	</RuleSet>
+
+	<!-- HtmlTag RuleSet -->
+	<RuleSet name="HtmlTag">
+		<Span color="Value" begin="&quot;" end="&quot;" />
+		<Span color="Value" begin="'" end="'" />
+
+		<Keywords color="Attribute">
+			<Word>class</Word>
+			<Word>id</Word>
+			<Word>src</Word>
+			<Word>href</Word>
+			<Word>style</Word>
+			<Word>alt</Word>
+			<Word>title</Word>
+			<Word>lang</Word>
+			<Word>type</Word>
+			<Word>name</Word>
+			<Word>value</Word>
+			<Word>rel</Word>
+		</Keywords>
+
+		<Keywords color="Tag">
+			<Word>html</Word>
+			<Word>head</Word>
+			<Word>body</Word>
+			<Word>div</Word>
+			<Word>span</Word>
+			<Word>p</Word>
+			<Word>h1</Word>
+			<Word>h2</Word>
+			<Word>h3</Word>
+			<Word>ul</Word>
+			<Word>li</Word>
+			<Word>a</Word>
+			<Word>table</Word>
+			<Word>tr</Word>
+			<Word>td</Word>
+			<Word>script</Word>
+			<Word>style</Word>
+			<Word>input</Word>
+			<Word>button</Word>
+			<Word>meta</Word>
+			<Word>link</Word>
+			<Word>form</Word>
+			<Word>br</Word>
+			<Word>hr</Word>
+		</Keywords>
+	</RuleSet>
+</SyntaxDefinition>

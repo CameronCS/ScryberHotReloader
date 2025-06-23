@@ -1,20 +1,38 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
-  <PropertyGroup>
-    <OutputType>WinExe</OutputType>
-    <TargetFramework>net9.0-windows</TargetFramework>
-    <Nullable>enable</Nullable>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <UseWPF>true</UseWPF>
-  </PropertyGroup>
+	<PropertyGroup>
+		<OutputType>WinExe</OutputType>
+		<TargetFramework>net9.0-windows</TargetFramework>
+		<Nullable>enable</Nullable>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<UseWPF>true</UseWPF>
+	</PropertyGroup>
 
-  <ItemGroup>
-    <PackageReference Include="AvalonEdit" Version="6.3.1.120" />
-    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.14.0" />
-    <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="9.0.6" />
-    <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="9.0.6" />
-    <PackageReference Include="Scryber.Core" Version="6.0.4-beta" />
-    <PackageReference Include="Scryber.Core.OpenType" Version="6.1.0-beta" />
-  </ItemGroup>
+	<ItemGroup>
+		<None Remove="C:\Users\camcs\.nuget\packages\scryber.core\6.0.4-beta\contentFiles\any\net6.0\readme.txt" />
+		<None Remove="XSHDFiles\CSharpDark.xshd" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<PackageReference Include="AvalonEdit" Version="6.3.1.120" />
+		<PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.14.0" />
+		<PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="9.0.6" />
+		<PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="9.0.6" />
+		<PackageReference Include="Scryber.Core" Version="6.0.4-beta" />
+		<PackageReference Include="Scryber.Core.OpenType" Version="6.1.0-beta" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<Resource Include="XSHDFiles\CSharpDark.xshd">
+			<CopyToOutputDirectory>Never</CopyToOutputDirectory>
+		</Resource>
+	</ItemGroup>
+
+	<ItemGroup>
+		<Resource Include="XSHDFiles\HTMLDark.xshd">
+			<CopyToOutputDirectory>Never</CopyToOutputDirectory>
+		</Resource>
+	</ItemGroup>
+
 
 </Project>

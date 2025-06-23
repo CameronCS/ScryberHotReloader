@@ -1,0 +1,53 @@
+﻿<SyntaxDefinition name="C#" extensions=".cs" xmlns="http://icsharpcode.net/sharpdevelop/syntaxdefinition/2008">
+	<Color name="Comment" foreground="#57A64A" fontStyle="italic"/>
+	<Color name="String" foreground="#D69D85"/>
+	<Color name="Keyword" foreground="#569CD6" fontWeight="bold"/>
+	<Color name="Type" foreground="#4EC9B0"/>
+	<Color name="Number" foreground="#B5CEA8"/>
+	<Color name="Text" foreground="#D4D4D4"/>
+
+	<RuleSet ignoreCase="false">
+		<Span color="Comment" begin="//" end="\n" />
+		<Span color="Comment" begin="/\*" end="\*/" multiline="true" />
+		<Span color="String" begin="&quot;" end="&quot;" />
+		<Span color="String" begin="@" end="&quot;" />
+
+		<Keywords color="Keyword">
+			<Word>public</Word>
+			<Word>private</Word>
+			<Word>protected</Word>
+			<Word>internal</Word>
+			<Word>static</Word>
+			<Word>void</Word>
+			<Word>class</Word>
+			<Word>namespace</Word>
+			<Word>if</Word>
+			<Word>else</Word>
+			<Word>return</Word>
+			<Word>using</Word>
+			<Word>try</Word>
+			<Word>catch</Word>
+			<Word>finally</Word>
+			<Word>for</Word>
+			<Word>foreach</Word>
+			<Word>while</Word>
+			<Word>do</Word>
+		</Keywords>
+
+		<Keywords color="Type">
+			<Word>int</Word>
+			<Word>string</Word>
+			<Word>bool</Word>
+			<Word>double</Word>
+			<Word>float</Word>
+			<Word>decimal</Word>
+			<Word>var</Word>
+			<Word>object</Word>
+			<Word>byte</Word>
+			<Word>long</Word>
+			<Word>short</Word>
+		</Keywords>
+
+		<Rule color="Number">\b\d+(\.\d+)?\b</Rule>
+	</RuleSet>
+</SyntaxDefinition>
