@@ -50,7 +50,7 @@ Found a bug? 🐞 Have ideas for new features? 💡 Feel free to open issues or 
 
 ---
 
-## License
+## 📜 License
 
 This project is licensed under the [MIT License](LICENSE) — feel free to use, modify, and share with attribution. 🚀
 
