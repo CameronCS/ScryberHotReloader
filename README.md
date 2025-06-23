@@ -5,6 +5,18 @@ Designed to speed up your workflow by letting you edit HTML and C# models side-b
 
 ---
 
+## 📚 Table of Contents
+
+- [✨ Features](#-features)  
+- [🚀 How to Use](#-how-to-use)  
+- [💡 Quick Tips](#-quick-tips)  
+- [📥 Installation](#-installation)  
+- [🤝 Contributing](#-contributing)  
+- [📜 License](#-license)  
+- [📬 Contact & Thanks](#-contact--thanks)
+
+---
+
 ## ✨ Features
 
 - 📝 **Dual Editors**: Separate tabs for HTML and C# model editing with syntax highlighting.  
@@ -50,7 +62,7 @@ Found a bug? 🐞 Have ideas for new features? 💡 Feel free to open issues or 
 
 ---
 
-## License
+## 📜 License
 
 This project is licensed under the [MIT License](LICENSE) — feel free to use, modify, and share with attribution. 🚀
 
