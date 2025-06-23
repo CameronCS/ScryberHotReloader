@@ -50,6 +50,12 @@ Found a bug? 🐞 Have ideas for new features? 💡 Feel free to open issues or 
 
 ---
 
+## License
+
+This project is licensed under the [MIT License](LICENSE) — feel free to use, modify, and share with attribution. 🚀
+
+---
+
 ## 📬 Contact & Thanks
 
 Crafted with care by **Cameron Stocks** — a passionate coder on a mission to simplify your dev life.  
