@@ -35,6 +35,7 @@ namespace ScryberHotReloader {
             ModelEditor.TextArea.KeyDown += ModelEditor_KeyDown;
             LoadHtmlHighlighting();
             LoadCSHighlighting();
+            this.StateChanged += (s, e) => UpdateMaximizeIcon();
         }
 
         private void LoadCSHighlighting() {
@@ -241,7 +242,7 @@ namespace ScryberHotReloader {
                 var currentLineText = ModelEditor.Document.GetText(line.Offset, line.Length);
 
                 // Get leading whitespace
-                string indentation = new string(currentLineText.TakeWhile(char.IsWhiteSpace).ToArray());
+                string indentation = new([.. currentLineText.TakeWhile(char.IsWhiteSpace)]);
 
                 // Insert newline and indentation
                 ModelEditor.Document.Insert(caret.Offset, Environment.NewLine + indentation);
@@ -284,6 +285,44 @@ namespace ScryberHotReloader {
             }
 
             return Activator.CreateInstance(modelType);
+        }
+
+        private void MinimizeButton_Click(object sender, RoutedEventArgs e) {
+            WindowState = WindowState.Minimized;
+        }
+
+        private void CloseButton_Click(object sender, RoutedEventArgs e) {
+            Close();
+        }
+
+        private void MaximizeButton_Click(object sender, RoutedEventArgs e) {
+            ToggleWindowState();
+        }
+
+        private void ToggleWindowState() {
+            if (WindowState == WindowState.Maximized) {
+                WindowState = WindowState.Normal;
+            } else {
+                WindowState = WindowState.Maximized;
+            }
+
+            UpdateMaximizeIcon();
+        }
+
+        private void UpdateMaximizeIcon() {
+            if (WindowState == WindowState.Maximized) {
+                MaximizeButton.Content = "\uE923"; // Restore icon
+            } else {
+                MaximizeButton.Content = "\uE922"; // Maximize icon
+            }
+        }
+
+        private void TopBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e) {
+            if (e.ClickCount == 2) {
+                ToggleWindowState();
+            } else {
+                DragMove();
+            }
         }
     }
 }

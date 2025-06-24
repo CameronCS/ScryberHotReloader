@@ -9,6 +9,7 @@
 	</PropertyGroup>
 
 	<ItemGroup>
+		<None Remove="Assets\icon.ico" />
 		<None Remove="C:\Users\camcs\.nuget\packages\scryber.core\6.0.4-beta\contentFiles\any\net6.0\readme.txt" />
 		<None Remove="XSHDFiles\CSharpDark.xshd" />
 	</ItemGroup>
@@ -24,6 +25,9 @@
 	</ItemGroup>
 
 	<ItemGroup>
+		<Resource Include="Assets\icon.ico">
+		  <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+		</Resource>
 		<Resource Include="XSHDFiles\CSharpDark.xshd">
 			<CopyToOutputDirectory>Never</CopyToOutputDirectory>
 		</Resource>
