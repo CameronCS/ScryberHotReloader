@@ -168,7 +168,7 @@
         <!-- PDF Viewer -->
         <Border Grid.Row="1" Grid.Column="2" Margin="5"
                 BorderThickness="1" BorderBrush="#444" CornerRadius="4">
-            <WebBrowser Name="PdfViewer" />
+            <wv2:WebView2 x:Name="PdfViewer" xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"/>
         </Border>
 
     </Grid>

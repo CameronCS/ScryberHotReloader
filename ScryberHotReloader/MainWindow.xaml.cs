@@ -182,7 +182,8 @@ namespace ScryberHotReloader {
                 }
 
                 _previousFile = output;
-                PdfViewer.Source = new(output);
+                await PdfViewer.EnsureCoreWebView2Async();
+                PdfViewer.CoreWebView2.Navigate($"file:///{output.Replace("\\", "/")}");
             } catch (Exception ex) {
                 _consecutiveFailures++;
                 if (_consecutiveFailures % 5 == 0) {
