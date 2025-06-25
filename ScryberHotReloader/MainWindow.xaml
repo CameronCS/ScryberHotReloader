@@ -3,6 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:avalonedit="http://icsharpcode.net/sharpdevelop/avalonedit"
         xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
+        xmlns:wc="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         Title="Scryber Hot Reloader" Height="700" Width="1200"
         Background="#1e1e1e"
         FontFamily="Segoe UI"
@@ -164,7 +165,7 @@
                 </Grid.ColumnDefinitions>
 
                 <!-- Menu -->
-                <Menu Grid.Column="0" VerticalAlignment="Center" Background="Transparent" Margin="10,0,0,0">
+                <Menu Grid.Column="0" VerticalAlignment="Center" Background="Transparent" Margin="10,0,0,0" wc:WindowChrome.IsHitTestVisibleInChrome="True">
                     <MenuItem Header="File">
                         <MenuItem Header="Open HTML" Click="OpenHtml_Click"/>
                         <MenuItem Header="Save HTML" Click="SaveHtml_Click"/>
@@ -185,14 +186,11 @@
 
                 <!-- Window Controls -->
                 <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
-                    <Button x:Name="MinimizeButton" Content="&#xE921;" Click="MinimizeButton_Click"
-                        Style="{StaticResource WindowControlButton}" FontFamily="Segoe MDL2 Assets"/>
+                    <Button x:Name="MinimizeButton" Content="&#xE921;" Click="MinimizeButton_Click" Style="{StaticResource WindowControlButton}" FontFamily="Segoe MDL2 Assets" wc:WindowChrome.IsHitTestVisibleInChrome="True"/>
 
-                    <Button x:Name="MaximizeButton" Content="&#xE922;" Click="MaximizeButton_Click"
-                        Style="{StaticResource WindowControlButton}" FontFamily="Segoe MDL2 Assets"/>
+                    <Button x:Name="MaximizeButton" Content="&#xE922;" Click="MaximizeButton_Click" Style="{StaticResource WindowControlButton}" FontFamily="Segoe MDL2 Assets" wc:WindowChrome.IsHitTestVisibleInChrome="True"/>
 
-                    <Button x:Name="CloseButton" Content="&#xE8BB;" Click="CloseButton_Click"
-                        Style="{StaticResource CloseWindowControlButton}" FontFamily="Segoe MDL2 Assets"/>
+                    <Button x:Name="CloseButton" Content="&#xE8BB;" Click="CloseButton_Click" Style="{StaticResource CloseWindowControlButton}" FontFamily="Segoe MDL2 Assets" wc:WindowChrome.IsHitTestVisibleInChrome="True"/>
 
                 </StackPanel>
             </Grid>

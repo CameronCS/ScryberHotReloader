@@ -56,6 +56,14 @@ Designed to speed up your workflow by letting you edit HTML and C# models side-b
 
 ---
 
+## 📚 Syntax Guide
+
+For detailed instructions on how to write **HTML** and **C#** code for Scryber Hot Reloader, including required HTML tags like `<html lang='en' xmlns='http://www.w3.org/1999/xhtml'>` 🌐, self-closing tags `/>` ✂️, and standard C# syntax 💻, please check out the [Syntax Guide](SyntaxRules.md).
+
+This guide also explains how to include external C# classes using `using` statements 🧩.
+
+---
+
 ## 🤝 Contributing
 
 Found a bug? 🐞 Have ideas for new features? 💡 Feel free to open issues or pull requests on GitHub. Contributions are very welcome! 🙌

@@ -15,13 +15,13 @@ using System.Windows;
 using System.Windows.Documents;
 using System.Windows.Input;
 using System.Xml;
+using System.Windows.Shell;
 
 namespace ScryberHotReloader {
     public partial class MainWindow : Window {
         private readonly string CWD = Directory.GetCurrentDirectory();
         private string _currentHtml = "";
         private string _previousFile = "";
-        private int _consecutiveFailures = 0;
         private string _currentFilePath = "";
         private CompletionWindow? _htmlCompletionWindow;
         private CompletionWindow? _csCompletionWindow;
@@ -36,6 +36,18 @@ namespace ScryberHotReloader {
             LoadHtmlHighlighting();
             LoadCSHighlighting();
             this.StateChanged += (s, e) => UpdateMaximizeIcon();
+
+            var chrome = new WindowChrome {
+                CaptionHeight = 40,
+                ResizeBorderThickness = new Thickness(10),
+                CornerRadius = new CornerRadius(0),
+                GlassFrameThickness = new Thickness(0),
+                UseAeroCaptionButtons = false
+            };
+
+            WindowChrome.SetWindowChrome(this, chrome);
+            HtmlEditor.Text = Defaults.DefaultHtml;
+            ModelEditor.Text = Defaults.DefaultCS;
         }
 
         private void LoadCSHighlighting() {
@@ -150,7 +162,7 @@ namespace ScryberHotReloader {
 
         private async Task SaveHtml_Click_Async() {
             if (string.IsNullOrEmpty(_currentFilePath)) {
-                return;
+                SaveAsHtml_Click(this, new RoutedEventArgs());
             }
 
             _currentHtml = HtmlEditor.Text;
@@ -171,8 +183,6 @@ namespace ScryberHotReloader {
 
                 await document.SaveAsPDFAsync(output);
 
-                _consecutiveFailures = 0;
-
                 PdfViewer.Source = new Uri("about:blank");
                 await Task.Delay(100);
 
@@ -186,11 +196,8 @@ namespace ScryberHotReloader {
                 await PdfViewer.EnsureCoreWebView2Async();
                 PdfViewer.CoreWebView2.Navigate($"file:///{output.Replace("\\", "/")}");
             } catch (Exception ex) {
-                _consecutiveFailures++;
-                if (_consecutiveFailures % 5 == 0) {
-                    MessageBox.Show($"Failed to generate PDF ({_consecutiveFailures}x):\n{ex.Message}", "PDF Error",
-                        MessageBoxButton.OK, MessageBoxImage.Warning);
-                }
+                MessageBox.Show($"Failed to generate PDF:\n{ex.Message}", "PDF Error",MessageBoxButton.OK, MessageBoxImage.Warning);
+                
             }
         }
 
@@ -300,13 +307,11 @@ namespace ScryberHotReloader {
         }
 
         private void ToggleWindowState() {
-            if (WindowState == WindowState.Maximized) {
-                WindowState = WindowState.Normal;
-            } else {
+            if (WindowState == WindowState.Normal) {
                 WindowState = WindowState.Maximized;
+            } else {
+                WindowState = WindowState.Normal;
             }
-
-            UpdateMaximizeIcon();
         }
 
         private void UpdateMaximizeIcon() {
