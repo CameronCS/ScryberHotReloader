@@ -32,7 +32,7 @@ Community leaders have the right and responsibility to remove, edit, or reject c
 
 ## Reporting Guidelines
 
-If you are subject to or witness unacceptable behavior, or have any other concerns, please notify me at [camcstocks@gmail.com]
+If you are subject to or witness unacceptable behavior, or have any other concerns, please notify [me](camcstocks@gmail.com)
 
 All complaints will be reviewed and investigated promptly and fairly.
 
