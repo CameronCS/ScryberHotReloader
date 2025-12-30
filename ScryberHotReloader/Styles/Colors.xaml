@@ -1,0 +1,30 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- Background Colors -->
+    <SolidColorBrush x:Key="BackgroundDark" Color="#1e1e1e"/>
+    <SolidColorBrush x:Key="BackgroundMedium" Color="#252526"/>
+    <SolidColorBrush x:Key="BackgroundLight" Color="#2D2D30"/>
+    <SolidColorBrush x:Key="BackgroundHover" Color="#2A2D2E"/>
+    <SolidColorBrush x:Key="BackgroundPressed" Color="#3F3F46"/>
+
+    <!-- Text Colors -->
+    <SolidColorBrush x:Key="ForegroundPrimary" Color="#D4D4D4"/>
+    <SolidColorBrush x:Key="ForegroundSecondary" Color="#CCCCCC"/>
+    <SolidColorBrush x:Key="ForegroundDisabled" Color="#777777"/>
+
+    <!-- Accent Colors -->
+    <SolidColorBrush x:Key="AccentBlue" Color="#007ACC"/>
+    <SolidColorBrush x:Key="AccentBlueDark" Color="#005A9E"/>
+    <SolidColorBrush x:Key="AccentRed" Color="#E81123"/>
+    <SolidColorBrush x:Key="AccentRedDark" Color="#C50F1F"/>
+
+    <!-- Border Colors -->
+    <SolidColorBrush x:Key="BorderPrimary" Color="#444444"/>
+    <SolidColorBrush x:Key="BorderSecondary" Color="#333333"/>
+
+    <!-- Additional UI Colors -->
+    <SolidColorBrush x:Key="White" Color="White"/>
+    <SolidColorBrush x:Key="Transparent" Color="Transparent"/>
+
+</ResourceDictionary>
