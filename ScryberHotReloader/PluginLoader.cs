@@ -33,9 +33,15 @@ internal static class PluginLoader {
 
         string dllName = requested.Name + ".dll";
 
-        // 1. User's build output folder.
+        // 1. User's build output folder — only return it if the version matches what was requested.
         string candidate = Path.Combine(_resolverBaseDir, dllName);
-        if (File.Exists(candidate)) return Assembly.LoadFrom(candidate);
+        if (File.Exists(candidate)) {
+            try {
+                if (requested.Version == null ||
+                    AssemblyName.GetAssemblyName(candidate).Version == requested.Version)
+                    return Assembly.LoadFrom(candidate);
+            } catch { }
+        }
 
         // 2. Search ALL installed framework versions for the exact requested version.
         //    This is broader than SharedFrameworkDirs (which is current-version-only for Roslyn)
