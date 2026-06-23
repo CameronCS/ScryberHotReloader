@@ -154,6 +154,12 @@ namespace ScryberHotReloader {
                     HtmlEditor.Text = content;
                     _currentHtml = content;
                     _currentFilePath = dlg.FileName;
+
+                    // Load companion startup file if one exists alongside the HTML
+                    string startupPath = System.IO.Path.ChangeExtension(dlg.FileName, ".startup.cs");
+                    if (File.Exists(startupPath))
+                        StartupEditor.Text = File.ReadAllText(startupPath, Encoding.UTF8);
+
                     SaveHtml_Click(sender, e);
                 } catch (Exception ex) {
                     MessageBox.Show($"Failed to open file:\n{ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
@@ -189,6 +195,10 @@ namespace ScryberHotReloader {
 
             _currentHtml = HtmlEditor.Text;
             File.WriteAllText(_currentFilePath, _currentHtml, Encoding.UTF8);
+
+            // Save startup tab alongside the HTML so it persists between sessions
+            string startupFilePath = System.IO.Path.ChangeExtension(_currentFilePath, ".startup.cs");
+            File.WriteAllText(startupFilePath, StartupEditor.Text, Encoding.UTF8);
 
             // 1. Load plugin assemblies so types are available to Roslyn and the Startup tab
             var (assemblies, asmWarnings) = PluginLoader.LoadAssembliesOnly(_currentFilePath);
@@ -476,13 +486,24 @@ namespace ScryberHotReloader {
         }
 
         private void ReloadPlugins_Click(object sender, RoutedEventArgs e) {
-            var (provider, warnings) = PluginLoader.Load(_currentFilePath);
-            _serviceProvider = provider;
+            var (assemblies, asmWarnings) = PluginLoader.LoadAssembliesOnly(_currentFilePath);
 
-            string status = provider != null ? "Plugins loaded successfully." : "No plugin config (scryber-plugins.json) found next to the HTML file.";
-            string detail = warnings.Length > 0 ? "\n\nWarnings:\n" + string.Join("\n", warnings) : "";
-            MessageBox.Show(status + detail, "Plugins", MessageBoxButton.OK,
-                provider != null ? MessageBoxImage.Information : MessageBoxImage.Warning);
+            // Startup tab always takes priority; fall back to convention registrar if it yields nothing
+            _serviceProvider = CompileStartupServices(StartupEditor.Text);
+
+            string[] regWarnings = [];
+            if (_serviceProvider == null && assemblies.Count > 0) {
+                var (fallback, rw) = PluginLoader.BuildFromRegistrar(assemblies);
+                _serviceProvider = fallback;
+                regWarnings = rw;
+            }
+
+            var allWarnings = asmWarnings.Concat(regWarnings).ToArray();
+            string status = assemblies.Count > 0
+                ? "Plugin assemblies reloaded."
+                : "No scryber-plugins.json found — Startup tab services are still active.";
+            string detail = allWarnings.Length > 0 ? "\n\nWarnings:\n" + string.Join("\n", allWarnings) : "";
+            MessageBox.Show(status + detail, "Plugins", MessageBoxButton.OK, MessageBoxImage.Information);
         }
 
 private ICSharpCode.AvalonEdit.TextEditor ActiveEditor =>
