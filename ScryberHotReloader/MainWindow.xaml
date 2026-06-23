@@ -213,6 +213,9 @@
                     <MenuItem Header="Plugins">
                         <MenuItem Header="Manage Plugins..." Click="ManagePlugins_Click"/>
                         <MenuItem Header="Reload Plugins" Click="ReloadPlugins_Click"/>
+                        <Separator/>
+                        <MenuItem Header="Preset Manager..." Click="PresetManager_Click"/>
+                        <MenuItem Header="Save Current as Preset..." Click="SaveAsPreset_Click"/>
                     </MenuItem>
                 </Menu>
 

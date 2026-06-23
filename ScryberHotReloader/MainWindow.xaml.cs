@@ -218,7 +218,7 @@ namespace ScryberHotReloader {
             }
 
             string modelCode = ModelEditor.Text;
-            object? modelInstance = CompileAndInstantiateAnyModel(modelCode, _serviceProvider);
+            var models = CompileAndRunModel(modelCode, _serviceProvider);
 
             string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmssfff");
             string output = System.IO.Path.Combine(CWD, $"preview_{timestamp}.pdf");
@@ -226,8 +226,9 @@ namespace ScryberHotReloader {
             try {
                 Document document = Document.ParseDocument(_currentFilePath);
 
-                if (modelInstance != null) {
-                    document.Params["Model"] = modelInstance;
+                if (models != null) {
+                    foreach (var kvp in models)
+                        document.Params[kvp.Key] = kvp.Value;
                 }
 
                 await document.SaveAsPDFAsync(output);
@@ -414,49 +415,55 @@ namespace ScryberHotReloader {
             return services.BuildServiceProvider();
         }
 
-        public static object? CompileAndInstantiateAnyModel(string sourceCode, IServiceProvider? services = null) {
-            if (string.IsNullOrEmpty(sourceCode)) {
-                return null;
-            }
+        public static Dictionary<string, IScryberModel>? CompileAndRunModel(string sourceCode, IServiceProvider? services = null) {
+            if (string.IsNullOrEmpty(sourceCode)) return null;
 
-            SyntaxTree syntaxTree = CSharpSyntaxTree.ParseText(sourceCode);
+            var syntaxTree = CSharpSyntaxTree.ParseText(sourceCode);
+            var refs = AppDomain.CurrentDomain.GetAssemblies()
+                .Where(a => !a.IsDynamic && !string.IsNullOrEmpty(a.Location))
+                .Select(a => MetadataReference.CreateFromFile(a.Location))
+                .Cast<MetadataReference>()
+                .ToList();
 
-            List<MetadataReference> refs = [.. AppDomain.CurrentDomain.GetAssemblies().Where(a => !a.IsDynamic && !string.IsNullOrEmpty(a.Location)).Select(a => MetadataReference.CreateFromFile(a.Location)).Cast<MetadataReference>()];
+            var compilation = CSharpCompilation.Create("DynamicModelAssembly", [syntaxTree], refs,
+                new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
 
-            CSharpCompilation compilation = CSharpCompilation.Create("DynamicModelAssembly", [syntaxTree], refs, new(OutputKind.DynamicallyLinkedLibrary));
+            using var ms = new MemoryStream();
+            var emitResult = compilation.Emit(ms);
 
-            using MemoryStream ms = new();
-            Microsoft.CodeAnalysis.Emit.EmitResult result = compilation.Emit(ms);
-
-            if (!result.Success) {
-                string errors = string.Join("\n", result.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error).Select(d => d.ToString()));
-
+            if (!emitResult.Success) {
+                string errors = string.Join("\n", emitResult.Diagnostics
+                    .Where(d => d.Severity == DiagnosticSeverity.Error)
+                    .Select(d => d.ToString()));
                 MessageBox.Show($"Model compilation failed:\n\n{errors}", "Compile Error", MessageBoxButton.OK, MessageBoxImage.Error);
                 return null;
             }
 
             ms.Seek(0, SeekOrigin.Begin);
-            Assembly assembly = Assembly.Load(ms.ToArray());
+            var assembly = Assembly.Load(ms.ToArray());
 
-            // When services are available prefer the first class whose constructor can be satisfied.
-            // Fall back to a parameterless constructor so existing models without DI keep working.
-            Type[] compiledTypes = assembly.GetTypes();
-            Type? modelType = services != null
-                ? compiledTypes.FirstOrDefault(t => t.IsPublic && !t.IsAbstract && t.Name == "Model")
-                  ?? compiledTypes.FirstOrDefault(t => t.IsPublic && !t.IsAbstract)
-                : compiledTypes.FirstOrDefault(t => t.GetConstructor([]) != null);
+            var runnerTypes = assembly.GetTypes()
+                .Where(t => typeof(IScryberRunner).IsAssignableFrom(t) && !t.IsInterface && !t.IsAbstract)
+                .ToList();
 
-            if (modelType == null) {
-                MessageBox.Show("No suitable public class was found in the model.", "Compile Error");
+            if (runnerTypes.Count == 0) {
+                MessageBox.Show("No class implementing IScryberRunner was found in the Model tab.", "Model Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                return null;
+            }
+
+            if (runnerTypes.Count > 1) {
+                string names = string.Join(", ", runnerTypes.Select(t => t.Name));
+                MessageBox.Show($"Only one IScryberRunner is allowed per Model tab, but found {runnerTypes.Count}: {names}", "Model Error", MessageBoxButton.OK, MessageBoxImage.Error);
                 return null;
             }
 
             try {
-                return services != null
-                    ? ActivatorUtilities.CreateInstance(services, modelType)
-                    : Activator.CreateInstance(modelType);
+                var runner = services != null
+                    ? (IScryberRunner)ActivatorUtilities.CreateInstance(services, runnerTypes[0])
+                    : (IScryberRunner)Activator.CreateInstance(runnerTypes[0])!;
+                return runner.GetModels();
             } catch (Exception ex) {
-                MessageBox.Show($"Failed to instantiate model:\n\n{ex.InnerException?.Message ?? ex.Message}", "Model Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show($"Failed to run model:\n\n{ex.InnerException?.Message ?? ex.Message}", "Model Error", MessageBoxButton.OK, MessageBoxImage.Error);
                 return null;
             }
         }
@@ -514,6 +521,77 @@ namespace ScryberHotReloader {
                 if (warnings.Length > 0)
                     MessageBox.Show(string.Join("\n\n", warnings), "Plugin Warnings", MessageBoxButton.OK, MessageBoxImage.Warning);
             }
+        }
+
+        private void PresetManager_Click(object sender, RoutedEventArgs e) {
+            PluginConfig? current = null;
+            if (!string.IsNullOrEmpty(_currentFilePath)) {
+                string cfgPath = System.IO.Path.Combine(
+                    System.IO.Path.GetDirectoryName(_currentFilePath)!, "scryber-plugins.json");
+                if (File.Exists(cfgPath)) {
+                    try { current = System.Text.Json.JsonSerializer.Deserialize<PluginConfig>(
+                              File.ReadAllText(cfgPath),
+                              new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                    } catch { }
+                }
+            }
+
+            var dialog = new PresetManagerWindow(StartupEditor.Text, current) { Owner = this };
+            if (dialog.ShowDialog() == true && dialog.LoadedPreset != null)
+                ApplyPreset(dialog.LoadedPreset);
+        }
+
+        private void SaveAsPreset_Click(object sender, RoutedEventArgs e) {
+            PluginConfig? current = null;
+            if (!string.IsNullOrEmpty(_currentFilePath)) {
+                string cfgPath = System.IO.Path.Combine(
+                    System.IO.Path.GetDirectoryName(_currentFilePath)!, "scryber-plugins.json");
+                if (File.Exists(cfgPath)) {
+                    try { current = System.Text.Json.JsonSerializer.Deserialize<PluginConfig>(
+                              File.ReadAllText(cfgPath),
+                              new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                    } catch { }
+                }
+            }
+
+            var dialog = new PresetManagerWindow(StartupEditor.Text, current) { Owner = this };
+            dialog.ShowDialog();
+        }
+
+        private void ApplyPreset(PluginPreset preset) {
+            // Apply startup code
+            StartupEditor.Text = preset.StartupCode;
+
+            // Write plugin config next to the current HTML file (or CWD if none open)
+            string dir = !string.IsNullOrEmpty(_currentFilePath)
+                ? System.IO.Path.GetDirectoryName(_currentFilePath)!
+                : Directory.GetCurrentDirectory();
+
+            var config = new PluginConfig {
+                AssemblyDirectory = preset.AssemblyDirectory,
+                Assemblies        = preset.Assemblies,
+                Registrar         = preset.Registrar
+            };
+
+            string cfgPath = System.IO.Path.Combine(dir, "scryber-plugins.json");
+            File.WriteAllText(cfgPath, System.Text.Json.JsonSerializer.Serialize(config,
+                new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+
+            // Reload plugins with the new config
+            var (assemblies, pluginPaths, asmWarnings) = PluginLoader.LoadAssembliesOnly(_currentFilePath);
+            _serviceProvider = CompileStartupServices(StartupEditor.Text, pluginPaths);
+
+            string[] regWarnings = [];
+            if (_serviceProvider == null && assemblies.Count > 0) {
+                var (fallback, rw) = PluginLoader.BuildFromRegistrar(assemblies);
+                _serviceProvider = fallback;
+                regWarnings = rw;
+            }
+
+            var allWarnings = asmWarnings.Concat(regWarnings).ToArray();
+            string detail = allWarnings.Length > 0 ? "\n\nWarnings:\n" + string.Join("\n", allWarnings) : "";
+            MessageBox.Show($"Preset \"{preset.Name}\" loaded." + detail, "Preset Applied",
+                MessageBoxButton.OK, MessageBoxImage.Information);
         }
 
         private void ReloadPlugins_Click(object sender, RoutedEventArgs e) {

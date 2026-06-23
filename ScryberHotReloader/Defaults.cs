@@ -15,16 +15,26 @@ namespace ScryberHotReloader
         <title>Hello World</title>
     </head>
     <body>
-        <p>Hello from {{ model.AppName }}</p>
+        <p>Hello from {{model.AppName}}</p>
     </body>
 </html>
 ";
 
-        public const string DefaultCS = @"// Default C# for Startup
-class Model {
-    public string AppName = ""Scryber Hot Reloader"";
+        public const string DefaultCS =
+"""
+using System.Collections.Generic;
+
+class Model : IScryberModel
+{
+    public string AppName { get; set; } = "Scryber Hot Reloader";
 }
-";
+
+class ScryberRunner : IScryberRunner
+{
+    public Dictionary<string, IScryberModel> GetModels() =>
+        new() { ["model"] = new Model() };
+}
+""";
 
         public const string DefaultStartup =
 """
