@@ -219,7 +219,7 @@ namespace ScryberHotReloader {
             }
 
             string modelCode = ModelEditor.Text;
-            var models = CompileAndRunModel(modelCode, _serviceProvider);
+            var models = CompileAndRunModel(modelCode, _serviceProvider, pluginPaths);
 
             string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmssfff");
             string output = System.IO.Path.Combine(CWD, $"preview_{timestamp}.pdf");
@@ -480,16 +480,39 @@ namespace ScryberHotReloader {
             return services.BuildServiceProvider();
         }
 
-        public static Dictionary<string, IScryberModel>? CompileAndRunModel(string sourceCode, IServiceProvider? services = null) {
+        public static Dictionary<string, IScryberModel>? CompileAndRunModel(string sourceCode, IServiceProvider? services = null, string[]? pluginPaths = null) {
             if (string.IsNullOrEmpty(sourceCode)) return null;
 
-            var syntaxTree = CSharpSyntaxTree.ParseText(sourceCode);
-            var refs = AppDomain.CurrentDomain.GetAssemblies()
-                .Where(a => !a.IsDynamic && !string.IsNullOrEmpty(a.Location))
-                .Select(a => MetadataReference.CreateFromFile(a.Location))
-                .Cast<MetadataReference>()
-                .ToList();
+            // Use the same reference strategy as CompileStartupServices so type identities
+            // are identical between the two compilations and DI service lookups succeed.
+            var refPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var refNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var refs     = new List<MetadataReference>();
 
+            foreach (var a in AppDomain.CurrentDomain.GetAssemblies()) {
+                if (a.IsDynamic || string.IsNullOrEmpty(a.Location) || !refPaths.Add(a.Location)) continue;
+                refNames.Add(a.GetName().Name ?? "");
+                try { refs.Add(MetadataReference.CreateFromFile(a.Location)); } catch { }
+            }
+
+            void TryAddRef(string path) {
+                if (!refPaths.Add(path) || !File.Exists(path)) return;
+                try {
+                    var name = AssemblyName.GetAssemblyName(path);
+                    if (name.Name != null && !refNames.Add(name.Name)) return;
+                    refs.Add(MetadataReference.CreateFromFile(path));
+                } catch { }
+            }
+
+            if (pluginPaths != null)
+                foreach (var p in pluginPaths) TryAddRef(p);
+
+            foreach (var dir in PluginLoader.GetProbeDirectories()) {
+                if (!Directory.Exists(dir)) continue;
+                foreach (var dll in Directory.GetFiles(dir, "*.dll")) TryAddRef(dll);
+            }
+
+            var syntaxTree = CSharpSyntaxTree.ParseText(sourceCode);
             var compilation = CSharpCompilation.Create("DynamicModelAssembly", [syntaxTree], refs,
                 new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
 
