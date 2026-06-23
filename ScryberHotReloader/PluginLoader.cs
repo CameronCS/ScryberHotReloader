@@ -17,8 +17,16 @@ internal static class PluginLoader {
 
     private static Assembly? OnAssemblyResolve(object? _, ResolveEventArgs args) {
         if (_resolverBaseDir == null) return null;
-        string dllName = new AssemblyName(args.Name).Name + ".dll";
-        string candidate = Path.Combine(_resolverBaseDir, dllName);
+        var name = new AssemblyName(args.Name);
+
+        // Return the already-loaded copy if present — loading a second copy of the same
+        // assembly name from a different path (e.g. DI.Abstractions in the user's build
+        // output when we already have it from our own NuGet cache) throws FileLoadException.
+        var existing = AppDomain.CurrentDomain.GetAssemblies()
+            .FirstOrDefault(a => a.GetName().Name == name.Name);
+        if (existing != null) return existing;
+
+        string candidate = System.IO.Path.Combine(_resolverBaseDir, name.Name + ".dll");
         return File.Exists(candidate) ? Assembly.LoadFrom(candidate) : null;
     }
 
