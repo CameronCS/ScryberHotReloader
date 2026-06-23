@@ -550,6 +550,29 @@ namespace ScryberHotReloader {
                     // Create a scope so DbContext and other scoped services resolve correctly.
                     // The scope lives only for the duration of GetModels() then disposes cleanly.
                     using var scope = services.CreateScope();
+
+                    // Pre-flight: check each ctor parameter is resolvable so we get a clear
+                    // "missing service" list instead of an opaque activation exception.
+                    var ctor = runnerTypes[0].GetConstructors()
+                        .OrderByDescending(c => c.GetParameters().Length)
+                        .FirstOrDefault();
+                    if (ctor != null) {
+                        var missing = ctor.GetParameters()
+                            .Where(p => scope.ServiceProvider.GetService(p.ParameterType) == null)
+                            .Select(p => $"  • {p.ParameterType.FullName}  (param: {p.Name})")
+                            .ToList();
+                        if (missing.Count > 0) {
+                            MessageBox.Show(
+                                $"The following services required by {runnerTypes[0].Name} " +
+                                $"are not registered in the DI container:\n\n" +
+                                string.Join("\n", missing) +
+                                "\n\nCheck your Startup tab — make sure these types are registered " +
+                                "and that ConfigureServices completed without errors.",
+                                "Missing Services", MessageBoxButton.OK, MessageBoxImage.Warning);
+                            return null;
+                        }
+                    }
+
                     var runner = (IScryberRunner)ActivatorUtilities.CreateInstance(scope.ServiceProvider, runnerTypes[0]);
                     return runner.GetModels();
                 } else {

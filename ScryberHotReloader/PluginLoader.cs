@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using System.IO;
 using System.Reflection;
+using System.Runtime.Loader;
 using System.Text.Json;
 
 namespace ScryberHotReloader;
@@ -39,7 +40,7 @@ internal static class PluginLoader {
             try {
                 if (requested.Version == null ||
                     AssemblyName.GetAssemblyName(candidate).Version == requested.Version)
-                    return Assembly.LoadFrom(candidate);
+                    return AssemblyLoadContext.Default.LoadFromAssemblyPath(candidate);
             } catch { }
         }
 
@@ -53,7 +54,7 @@ internal static class PluginLoader {
             try {
                 if (requested.Version == null ||
                     AssemblyName.GetAssemblyName(candidate).Version == requested.Version)
-                    return Assembly.LoadFrom(candidate);
+                    return AssemblyLoadContext.Default.LoadFromAssemblyPath(candidate);
             } catch { }
         }
 
@@ -228,7 +229,7 @@ internal static class PluginLoader {
             string fullPath = Path.IsPathRooted(entry) ? entry : Path.Combine(baseDir, entry);
             paths.Add(fullPath); // track path even if runtime load fails — Roslyn still needs it
             try {
-                loaded.Add(Assembly.LoadFrom(fullPath));
+                loaded.Add(AssemblyLoadContext.Default.LoadFromAssemblyPath(fullPath));
             } catch (Exception ex) {
                 warnings.Add($"Could not load assembly '{fullPath}': {ex.Message}");
             }
