@@ -272,6 +272,16 @@
                                            HorizontalScrollBarVisibility="Auto"
                                            VerticalScrollBarVisibility="Auto"/>
                 </TabItem>
+
+                <TabItem Header="Startup">
+                    <avalonedit:TextEditor Name="StartupEditor"
+                                           Background="#1e1e1e" Foreground="#d4d4d4"
+                                           FontFamily="Consolas" FontSize="14"
+                                           ShowLineNumbers="True" Padding="10"
+                                           BorderBrush="#444" BorderThickness="1"
+                                           HorizontalScrollBarVisibility="Auto"
+                                           VerticalScrollBarVisibility="Auto"/>
+                </TabItem>
             </TabControl>
 
             <!-- Find/Replace overlay panel -->

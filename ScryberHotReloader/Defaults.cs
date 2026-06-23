@@ -25,5 +25,22 @@ class Model {
     public string AppName = ""Scryber Hot Reloader"";
 }
 ";
+
+        public const string DefaultStartup =
+"""
+using Microsoft.Extensions.DependencyInjection;
+
+public class Startup
+{
+    public static void ConfigureServices(IServiceCollection services)
+    {
+        // Register your plugin services here.
+        // Load plugin assemblies first via Plugins → Manage Plugins...
+        //
+        // services.AddTransient<ICustomerService, CustomerService>();
+        // services.AddScoped<IOrderService, OrderService>();
+    }
+}
+""";
     }
 }

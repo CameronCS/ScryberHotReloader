@@ -10,33 +10,64 @@ internal static class PluginLoader {
     private const string RegistrarClassName = "ScryberPluginRegistrar";
     private const string ConfigureServicesMethod = "ConfigureServices";
 
+    // Redirects missing dependency lookups to the user's build output folder.
+    // Updated each time Load() is called so it always reflects the latest config.
+    private static string? _resolverBaseDir;
+    private static bool _resolverRegistered;
+
+    private static Assembly? OnAssemblyResolve(object? _, ResolveEventArgs args) {
+        if (_resolverBaseDir == null) return null;
+        string dllName = new AssemblyName(args.Name).Name + ".dll";
+        string candidate = Path.Combine(_resolverBaseDir, dllName);
+        return File.Exists(candidate) ? Assembly.LoadFrom(candidate) : null;
+    }
+
     /// <summary>
-    /// Locates scryber-plugins.json, loads the listed assemblies, calls the registrar,
-    /// and returns the built service provider plus any non-fatal warnings.
-    /// Returns a null provider when no config file is found — existing behaviour is preserved.
+    /// Loads plugin assemblies from scryber-plugins.json without calling any registrar.
+    /// Call this before compiling Startup tab code so plugin types are available to Roslyn.
     /// </summary>
-    public static (IServiceProvider? Provider, string[] Warnings) Load(string? htmlFilePath) {
+    public static (List<Assembly> Assemblies, string[] Warnings) LoadAssembliesOnly(string? htmlFilePath) {
         var warnings = new List<string>();
 
         string? configPath = FindConfig(htmlFilePath);
-        if (configPath == null)
-            return (null, []);
+        if (configPath == null) return ([], []);
 
         PluginConfig? config = ReadConfig(configPath, warnings);
-        if (config == null || config.Assemblies.Count == 0)
-            return (null, [.. warnings]);
+        if (config == null || config.Assemblies.Count == 0) return ([], [.. warnings]);
 
-        List<Assembly> assemblies = LoadAssemblies(config, configPath, warnings);
-        if (assemblies.Count == 0)
-            return (null, [.. warnings]);
+        var assemblies = LoadAssemblies(config, configPath, warnings);
+        return (assemblies, [.. warnings]);
+    }
+
+    /// <summary>
+    /// Builds an IServiceProvider by calling the convention registrar on already-loaded assemblies.
+    /// Use as a fallback when the Startup tab is empty.
+    /// </summary>
+    public static (IServiceProvider? Provider, string[] Warnings) BuildFromRegistrar(
+            List<Assembly> assemblies, string? explicitRegistrar = null) {
+        var warnings = new List<string>();
+        if (assemblies.Count == 0) return (null, []);
 
         IServiceCollection services = new ServiceCollection();
-        bool registered = InvokeRegistrar(assemblies, services, config.Registrar, warnings);
+        bool registered = InvokeRegistrar(assemblies, services, explicitRegistrar, warnings);
 
         if (!registered)
-            warnings.Add($"No '{RegistrarClassName}' class with a '{ConfigureServicesMethod}(IServiceCollection)' method was found in the loaded assemblies. Services will not be injected.");
+            warnings.Add($"No '{RegistrarClassName}', 'Program', or 'Startup' class with a " +
+                         $"'{ConfigureServicesMethod}(IServiceCollection)' method was found.");
 
-        return (services.BuildServiceProvider(), [.. warnings]);
+        return registered ? (services.BuildServiceProvider(), [.. warnings]) : (null, [.. warnings]);
+    }
+
+    /// <summary>
+    /// Convenience method: loads assemblies and calls the convention registrar in one step.
+    /// Preserves the original single-call behaviour for code paths that don't use the Startup tab.
+    /// </summary>
+    public static (IServiceProvider? Provider, string[] Warnings) Load(string? htmlFilePath) {
+        var (assemblies, asmWarnings) = LoadAssembliesOnly(htmlFilePath);
+        if (assemblies.Count == 0) return (null, asmWarnings);
+
+        var (provider, regWarnings) = BuildFromRegistrar(assemblies);
+        return (provider, [.. asmWarnings, .. regWarnings]);
     }
 
     // -------------------------------------------------------------------------
@@ -69,13 +100,19 @@ internal static class PluginLoader {
             ? config.AssemblyDirectory
             : Path.GetDirectoryName(configPath) ?? Directory.GetCurrentDirectory();
 
+        // Point the resolver at this directory so transitive dependencies
+        // (EF Core, etc.) are found automatically without listing them in the config.
+        _resolverBaseDir = baseDir;
+        if (!_resolverRegistered) {
+            AppDomain.CurrentDomain.AssemblyResolve += OnAssemblyResolve;
+            _resolverRegistered = true;
+        }
+
         var loaded = new List<Assembly>();
 
         foreach (string entry in config.Assemblies) {
             string fullPath = Path.IsPathRooted(entry) ? entry : Path.Combine(baseDir, entry);
             try {
-                // LoadFrom registers the assembly in the AppDomain — Roslyn picks it up
-                // automatically when scanning AppDomain.CurrentDomain.GetAssemblies().
                 loaded.Add(Assembly.LoadFrom(fullPath));
             } catch (Exception ex) {
                 warnings.Add($"Could not load assembly '{fullPath}': {ex.Message}");
@@ -101,14 +138,22 @@ internal static class PluginLoader {
 
             method = type.GetMethod(ConfigureServicesMethod, [typeof(IServiceCollection)]);
         } else {
-            // Convention: find any class named ScryberPluginRegistrar
-            foreach (Assembly assembly in assemblies) {
-                Type? registrar = assembly.GetTypes()
-                    .FirstOrDefault(t => t.Name == RegistrarClassName);
+            // Convention priority:
+            // 1. ScryberPluginRegistrar   — explicit hot-reloader opt-in
+            // 2. Program                  — partial class Program pattern (native, zero new files)
+            // 3. Startup                  — classic ASP.NET Core Startup.cs pattern
+            string[] candidateNames = [RegistrarClassName, "Program", "Startup"];
 
-                if (registrar == null) continue;
+            foreach (string name in candidateNames) {
+                foreach (Assembly assembly in assemblies) {
+                    Type? registrar = assembly.GetTypes()
+                        .FirstOrDefault(t => t.Name == name);
 
-                method = registrar.GetMethod(ConfigureServicesMethod, [typeof(IServiceCollection)]);
+                    if (registrar == null) continue;
+
+                    method = registrar.GetMethod(ConfigureServicesMethod, [typeof(IServiceCollection)]);
+                    if (method != null) break;
+                }
                 if (method != null) break;
             }
         }

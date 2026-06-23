@@ -1,22 +1,31 @@
 # Plugin Configuration Guide
 
-Scryber Hot Reloader can load services from your existing .NET application at preview time, so the C# model you write in the **Model** tab can receive real dependencies — data services, business logic, DB contexts — via constructor injection, exactly as they would in your main app.
+Scryber Hot Reloader can load services from your existing .NET application at preview time, so the C# model you write in the **Model** tab can receive real dependencies — data services, business logic, DB contexts — via constructor injection, exactly as they would in your main app. No changes to your project are required.
 
 ---
 
 ## How It Works
 
-1. You drop a `scryber-plugins.json` file next to your HTML template.
-2. The hot reloader reads that file on every **Ctrl+S**, loads the listed assemblies into the process, and calls your `ScryberPluginRegistrar.ConfigureServices` method.
-3. A DI container is built from those registrations.
-4. When your model class is compiled, it is instantiated through that container — constructor parameters are resolved automatically.
-5. The loaded types are also indexed for IntelliSense, so interface names and member completions appear in the Model editor immediately.
+On every **Ctrl+S**:
+
+1. Plugin assemblies are loaded from `scryber-plugins.json` (if present), making your types available to Roslyn and the IntelliSense engine.
+2. The **Startup tab** is compiled. If it contains a `ConfigureServices(IServiceCollection)` method, that builds the DI container.
+3. If the Startup tab is empty, the hot reloader falls back to the **convention registrar** — scanning loaded assemblies for `ScryberPluginRegistrar`, `Program`, or `Startup` classes.
+4. The Model tab is compiled and instantiated through the DI container — constructor parameters resolve automatically.
 
 ---
 
-## Step 1 — Create `scryber-plugins.json`
+## Step 1 — Load Your Assemblies
 
-Place this file in the **same directory as your HTML template file** (or in the app's working directory as a fallback).
+Open **Plugins → Manage Plugins...** to configure which assemblies to load. No manual JSON editing required.
+
+| Field | Description |
+|---|---|
+| **Assembly Directory** | Your app's build output folder (e.g. `bin\Debug\net9.0`). Transitive dependencies — EF Core, logging, etc. — are resolved from here automatically without listing them. |
+| **Assemblies** | Your own DLLs to load. Click **+ Add Assembly...** to browse for them. |
+| **Registrar class** | Optional. Fully-qualified class name if you want to point at a specific registrar. Leave blank to use the convention (see Step 2). |
+
+This saves a `scryber-plugins.json` file next to your HTML template. You can also create or edit it by hand if you prefer:
 
 ```json
 {
@@ -29,22 +38,16 @@ Place this file in the **same directory as your HTML template file** (or in the 
 }
 ```
 
-| Field | Required | Description |
-|---|---|---|
-| `assemblyDirectory` | No | Base path for resolving relative assembly names. Defaults to the folder containing `scryber-plugins.json`. Point this at your app's build output so transitive dependencies (EF Core, etc.) are already present. |
-| `assemblies` | Yes | List of DLL filenames (or absolute paths) to load. |
-| `registrar` | No | Fully-qualified class name of the registrar, e.g. `"MyApp.Business.ScryberPluginRegistrar"`. Omit to use the convention (see Step 2). |
-
 ---
 
-## Step 2 — Add a Registrar Class
+## Step 2 — Register Your Services
 
-Add a class named `ScryberPluginRegistrar` to **any one of the listed assemblies**. The hot reloader discovers it by name — no interface or NuGet reference needed.
+Open the **Startup tab** in the editor and write your service registrations. This is the recommended approach — no changes to your project at all:
 
 ```csharp
 using Microsoft.Extensions.DependencyInjection;
 
-public class ScryberPluginRegistrar
+public class Startup
 {
     public static void ConfigureServices(IServiceCollection services)
     {
@@ -54,86 +57,105 @@ public class ScryberPluginRegistrar
 }
 ```
 
-The method must be `public static void ConfigureServices(IServiceCollection services)`.
+The Startup tab is compiled fresh on every Ctrl+S. Changes take effect immediately.
 
-> If you prefer to keep the registrar in a dedicated assembly not listed under `assemblies`, specify it explicitly with the `registrar` field in the config.
+### Alternative — Convention registrar
+
+If you would rather keep the registration inside your own codebase, the hot reloader will automatically discover a `ConfigureServices(IServiceCollection)` static method on any of these classes in the loaded assemblies, checked in this order:
+
+| Class name | When to use |
+|---|---|
+| `ScryberPluginRegistrar` | Explicit opt-in — add a new class to any assembly |
+| `Program` | Add a `public static partial class Program` block to your existing `Program.cs` |
+| `Startup` | Existing `Startup.cs` in older-style ASP.NET Core projects — works automatically |
+
+The Startup tab always takes priority over the convention registrar.
 
 ---
 
 ## Step 3 — Use Services in the Model Tab
 
-Write your model class with constructor injection as you normally would:
+Write your model with constructor injection as normal. Name the class `Model` if you have multiple classes in the tab — it will always be used as the Scryber binding target:
 
 ```csharp
-public class InvoiceModel
+public class CustomerFetcher
 {
-    public string CustomerName { get; set; }
-    public decimal TotalAmount  { get; set; }
+    public string Name    { get; }
+    public decimal Total  { get; }
 
-    public InvoiceModel(IBusinessService biz)
+    public CustomerFetcher(IBusinessService biz)
     {
-        var invoice = biz.GetLatestInvoice(customerId: 1);
-        CustomerName = invoice.CustomerName;
-        TotalAmount  = invoice.Total;
+        var c = biz.GetCustomer(1);
+        Name  = c.Name;
+        Total = c.OutstandingBalance;
+    }
+}
+
+public class Model
+{
+    public string  CustomerName { get; set; }
+    public decimal Balance      { get; set; }
+
+    public Model(IBusinessService biz)
+    {
+        var data     = new CustomerFetcher(biz);
+        CustomerName = data.Name;
+        Balance      = data.Total;
     }
 }
 ```
 
-Hit **Ctrl+S** — the PDF preview renders with live data from your service.
+Hit **Ctrl+S** — the PDF preview renders with live data from your services.
 
 ---
 
 ## IntelliSense
 
-Once the plugin assemblies are loaded, the Model editor's autocomplete picks them up automatically:
+Once plugin assemblies are loaded, the Model and Startup editors pick them up automatically:
 
 - **Type names** — start typing `IBus` and `IBusinessService` appears in the suggestion list alongside C# keywords.
-- **Member access** — type `biz.` and the public members of `IBusinessService` appear (methods with their signatures, properties, fields).
+- **Member access** — type `biz.` and the public members of `IBusinessService` appear (methods with full signatures, properties, fields).
 
-No restart or manual refresh is needed; the type index rebuilds whenever assemblies are loaded.
+The type index rebuilds automatically whenever assemblies are loaded — no restart or manual refresh needed.
 
 ---
 
-## Reloading Plugins
+## Managing Plugins
 
-Plugins are reloaded automatically on every **Ctrl+S**. You can also trigger a manual reload — and see any warnings — via **Plugins → Reload Plugins** in the menu bar.
-
-To open the config file directly in your default editor: **Plugins → Open Config...**
-
-If no `scryber-plugins.json` is found, the hot reloader falls back to the original behaviour (parameterless constructor, no injected services).
+| Action | How |
+|---|---|
+| Configure assemblies | **Plugins → Manage Plugins...** — file browser dialog, no path typing |
+| Reload without saving | **Plugins → Reload Plugins** |
+| Automatic reload | Happens on every Ctrl+S |
 
 ---
 
 ## Warnings and Errors
 
-Non-fatal issues (e.g. an assembly path that doesn't exist, or a registrar that throws during setup) are shown in a warning dialog after Ctrl+S rather than silently failing, so you can diagnose config problems without leaving the app.
+Non-fatal issues (assembly not found, registrar threw an exception, etc.) appear as a warning dialog after Ctrl+S. Startup tab compilation errors appear inline with the full Roslyn diagnostic so you can fix them without leaving the app.
 
 ---
 
 ## Architecture Notes
 
+### Transitive dependencies
+
+When you set `assemblyDirectory` to your app's build output, the hot reloader registers an `AssemblyResolve` handler pointing at that directory. This means EF Core, its database providers, logging libraries, and any other transitive dependencies are found automatically — you only need to list your own DLLs in the config.
+
 ### Supported service lifetimes
 
-All three DI lifetimes are supported (`Transient`, `Scoped`, `Singleton`). Because model instantiation creates a fresh DI scope on every save, `Scoped` services (including EF Core `DbContext`) behave correctly.
+All three DI lifetimes work (`Transient`, `Scoped`, `Singleton`). A fresh DI scope is created for each model instantiation, so `Scoped` services including EF Core `DbContext` behave correctly.
 
-### Assembly loading
+### Assembly reload
 
-Assemblies are loaded with `Assembly.LoadFrom`, which registers them in the current AppDomain. This means:
-
-- Roslyn picks up the plugin types automatically when compiling your model code (no extra reference configuration needed).
-- If you change a plugin DLL on disk and want the hot reloader to pick up the new version, restart the app — .NET does not support unloading individual assemblies in the default AppDomain.
-
-### Multiple registrar classes
-
-Only the first `ScryberPluginRegistrar` found (scanning assemblies in the order listed) is called. If you need registrations split across assemblies, consolidate them into one registrar or use the `registrar` field to point at a specific class.
+Assemblies are loaded with `Assembly.LoadFrom` into the current AppDomain. If you rebuild your app's DLLs and want the hot reloader to pick up the new versions, restart the app — .NET does not support unloading individual assemblies from the default AppDomain.
 
 ---
 
 ## Example: Layered Architecture
 
-A typical setup for a project with separate Interface, Data, and Business assemblies:
+**`Plugins → Manage Plugins...`** config:
 
-**`scryber-plugins.json`**
 ```json
 {
   "assemblyDirectory": "C:\\MyApp\\bin\\Debug\\net9.0",
@@ -145,37 +167,36 @@ A typical setup for a project with separate Interface, Data, and Business assemb
 }
 ```
 
-**Registrar (inside `MyApp.Business.dll`)**
+**Startup tab**:
+
 ```csharp
 using Microsoft.Extensions.DependencyInjection;
 
-public class ScryberPluginRegistrar
+public class Startup
 {
     public static void ConfigureServices(IServiceCollection services)
     {
-        // Data layer
         services.AddTransient<ICustomerRepository, CustomerRepository>();
         services.AddTransient<IInvoiceRepository, InvoiceRepository>();
-
-        // Business layer
         services.AddTransient<ICustomerService, CustomerService>();
         services.AddTransient<IInvoiceService, InvoiceService>();
     }
 }
 ```
 
-**Model tab**
+**Model tab**:
+
 ```csharp
-public class InvoiceModel
+public class Model
 {
     public string CustomerName { get; set; }
-    public List<LineItem> Lines { get; set; }
+    public decimal Balance     { get; set; }
 
-    public InvoiceModel(IInvoiceService invoices)
+    public Model(IInvoiceService invoices)
     {
-        var data = invoices.GetDraft();
-        CustomerName = data.CustomerName;
-        Lines        = data.Lines;
+        var draft    = invoices.GetDraft();
+        CustomerName = draft.CustomerName;
+        Balance      = draft.Total;
     }
 }
 ```

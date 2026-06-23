@@ -41,6 +41,9 @@ namespace ScryberHotReloader {
             ModelEditor.TextArea.TextEntered += ModelEditor_TextEntered;
             ModelEditor.TextArea.TextEntering += ModelEditor_TextEntering;
             ModelEditor.TextArea.KeyDown += ModelEditor_KeyDown;
+            StartupEditor.TextArea.TextEntered += ModelEditor_TextEntered;
+            StartupEditor.TextArea.TextEntering += ModelEditor_TextEntering;
+            StartupEditor.TextArea.KeyDown += ModelEditor_KeyDown;
             LoadHtmlHighlighting();
             LoadCSHighlighting();
             this.StateChanged += (s, e) => UpdateMaximizeIcon();
@@ -56,6 +59,7 @@ namespace ScryberHotReloader {
             WindowChrome.SetWindowChrome(this, chrome);
             HtmlEditor.Text = Defaults.DefaultHtml;
             ModelEditor.Text = Defaults.DefaultCS;
+            StartupEditor.Text = Defaults.DefaultStartup;
         }
 
         private void LoadCSHighlighting() {
@@ -66,6 +70,7 @@ namespace ScryberHotReloader {
                 using var reader = XmlReader.Create(stream);
                 var highlighting = HighlightingLoader.Load(reader, HighlightingManager.Instance);
                 ModelEditor.SyntaxHighlighting = highlighting;
+                StartupEditor.SyntaxHighlighting = highlighting;
             } else {
                 MessageBox.Show("Failed to load syntax highlighting file.");
             }
@@ -185,11 +190,22 @@ namespace ScryberHotReloader {
             _currentHtml = HtmlEditor.Text;
             File.WriteAllText(_currentFilePath, _currentHtml, Encoding.UTF8);
 
-            var (provider, warnings) = PluginLoader.Load(_currentFilePath);
-            _serviceProvider = provider;
+            // 1. Load plugin assemblies so types are available to Roslyn and the Startup tab
+            var (assemblies, asmWarnings) = PluginLoader.LoadAssembliesOnly(_currentFilePath);
 
-            if (warnings.Length > 0)
-                MessageBox.Show(string.Join("\n\n", warnings), "Plugin Warnings", MessageBoxButton.OK, MessageBoxImage.Warning);
+            // 2. Compile the Startup tab — takes priority over convention registrar
+            _serviceProvider = CompileStartupServices(StartupEditor.Text);
+
+            // 3. Fall back to convention registrar (ScryberPluginRegistrar / Program / Startup)
+            if (_serviceProvider == null && assemblies.Count > 0) {
+                var (fallback, regWarnings) = PluginLoader.BuildFromRegistrar(assemblies);
+                _serviceProvider = fallback;
+                var allWarnings = asmWarnings.Concat(regWarnings).ToArray();
+                if (allWarnings.Length > 0)
+                    MessageBox.Show(string.Join("\n\n", allWarnings), "Plugin Warnings", MessageBoxButton.OK, MessageBoxImage.Warning);
+            } else if (asmWarnings.Length > 0) {
+                MessageBox.Show(string.Join("\n\n", asmWarnings), "Plugin Warnings", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
 
             string modelCode = ModelEditor.Text;
             object? modelInstance = CompileAndInstantiateAnyModel(modelCode, _serviceProvider);
@@ -306,6 +322,56 @@ namespace ScryberHotReloader {
             }
         }
 
+
+        private static IServiceProvider? CompileStartupServices(string sourceCode) {
+            if (string.IsNullOrWhiteSpace(sourceCode)) return null;
+
+            var refs = AppDomain.CurrentDomain.GetAssemblies()
+                .Where(a => !a.IsDynamic && !string.IsNullOrEmpty(a.Location))
+                .Select(a => MetadataReference.CreateFromFile(a.Location))
+                .Cast<MetadataReference>();
+
+            var compilation = CSharpCompilation.Create(
+                "StartupAssembly",
+                [CSharpSyntaxTree.ParseText(sourceCode)],
+                refs,
+                new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+
+            using var ms = new MemoryStream();
+            var result = compilation.Emit(ms);
+
+            if (!result.Success) {
+                string errors = string.Join("\n", result.Diagnostics
+                    .Where(d => d.Severity == DiagnosticSeverity.Error)
+                    .Select(d => d.ToString()));
+                MessageBox.Show($"Startup compilation failed:\n\n{errors}", "Startup Error",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+                return null;
+            }
+
+            ms.Seek(0, SeekOrigin.Begin);
+            var assembly = Assembly.Load(ms.ToArray());
+
+            // Find any class with a public static ConfigureServices(IServiceCollection) method
+            MethodInfo? method = assembly.GetTypes()
+                .Select(t => t.GetMethod("ConfigureServices",
+                    BindingFlags.Public | BindingFlags.Static,
+                    [typeof(IServiceCollection)]))
+                .FirstOrDefault(m => m != null);
+
+            if (method == null) return null; // empty / default — not an error
+
+            var services = new ServiceCollection();
+            try {
+                method.Invoke(null, [services]);
+            } catch (Exception ex) {
+                MessageBox.Show($"ConfigureServices threw an exception:\n\n{ex.InnerException?.Message ?? ex.Message}",
+                    "Startup Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                return null;
+            }
+
+            return services.BuildServiceProvider();
+        }
 
         public static object? CompileAndInstantiateAnyModel(string sourceCode, IServiceProvider? services = null) {
             if (string.IsNullOrEmpty(sourceCode)) {
