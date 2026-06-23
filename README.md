@@ -11,6 +11,7 @@ Designed to speed up your workflow by letting you edit HTML and C# models side-b
 - [🚀 How to Use](#-how-to-use)  
 - [💡 Quick Tips](#-quick-tips)  
 - [📥 Installation](#-installation)  
+- [🔌 Plugin Configuration](#-plugin-configuration)  
 - [🤝 Contributing](#-contributing)  
 - [📜 License](#-license)  
 - [📬 Contact & Thanks](#-contact--thanks)
@@ -61,6 +62,20 @@ Designed to speed up your workflow by letting you edit HTML and C# models side-b
 For detailed instructions on how to write **HTML** and **C#** code for Scryber Hot Reloader, including required HTML tags like `<html lang='en' xmlns='http://www.w3.org/1999/xhtml'>` 🌐, self-closing tags `/>` ✂️, and standard C# syntax 💻, please check out the [Syntax Guide](SyntaxRules.md).
 
 This guide also explains how to include external C# classes using `using` statements 🧩.
+
+---
+
+## 🔌 Plugin Configuration
+
+Scryber Hot Reloader supports loading services from your existing .NET application so your model code can use real dependencies — data services, business logic, and DB contexts — via constructor injection.
+
+For the full setup guide, see [PLUGINS.md](PLUGINS.md). The short version:
+
+1. Drop a `scryber-plugins.json` next to your HTML file pointing at your app's build output.
+2. Add a `ScryberPluginRegistrar` class to one of your assemblies with a `ConfigureServices(IServiceCollection)` method.
+3. Write your model with constructor injection — services resolve automatically on every Ctrl+S.
+
+Plugin types are also picked up by IntelliSense in the Model editor (type names and `.` member access) with no extra configuration.
 
 ---
 

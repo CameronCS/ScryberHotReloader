@@ -8,6 +8,7 @@ using Microsoft.Win32;
 using Scryber.Components;
 using ScryberHotReloader.Completions.CS;
 using ScryberHotReloader.Completions.HTML;
+using static ScryberHotReloader.Completions.CS.ModelIntelliSense;
 using System.IO;
 using System.Reflection;
 using System.Text;
@@ -15,6 +16,10 @@ using System.Windows;
 using System.Windows.Documents;
 using System.Windows.Input;
 using System.Xml;
+using Microsoft.Extensions.DependencyInjection;
+using System.Diagnostics;
+using System.Windows.Controls;
+using System.Windows.Media;
 using System.Windows.Shell;
 
 namespace ScryberHotReloader {
@@ -25,6 +30,9 @@ namespace ScryberHotReloader {
         private string _currentFilePath = "";
         private CompletionWindow? _htmlCompletionWindow;
         private CompletionWindow? _csCompletionWindow;
+        private List<int> _findMatches = [];
+        private int _currentMatchIndex = -1;
+        private IServiceProvider? _serviceProvider;
 
         public MainWindow() {
             InitializeComponent();
@@ -93,7 +101,16 @@ namespace ScryberHotReloader {
                 } else if (e.Key == Key.O) {
                     e.Handled = true;
                     OpenHtml_Click(sender, new RoutedEventArgs());
+                } else if (e.Key == Key.F) {
+                    e.Handled = true;
+                    OpenFindPanel(showReplace: false);
+                } else if (e.Key == Key.H) {
+                    e.Handled = true;
+                    OpenFindPanel(showReplace: true);
                 }
+            } else if (e.Key == Key.Escape && FindReplacePanel.Visibility == Visibility.Visible) {
+                e.Handled = true;
+                CloseFind();
             }
         }
 
@@ -168,8 +185,14 @@ namespace ScryberHotReloader {
             _currentHtml = HtmlEditor.Text;
             File.WriteAllText(_currentFilePath, _currentHtml, Encoding.UTF8);
 
+            var (provider, warnings) = PluginLoader.Load(_currentFilePath);
+            _serviceProvider = provider;
+
+            if (warnings.Length > 0)
+                MessageBox.Show(string.Join("\n\n", warnings), "Plugin Warnings", MessageBoxButton.OK, MessageBoxImage.Warning);
+
             string modelCode = ModelEditor.Text;
-            object? modelInstance = CompileAndInstantiateAnyModel(modelCode);
+            object? modelInstance = CompileAndInstantiateAnyModel(modelCode, _serviceProvider);
 
             string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmssfff");
             string output = System.IO.Path.Combine(CWD, $"preview_{timestamp}.pdf");
@@ -202,44 +225,68 @@ namespace ScryberHotReloader {
         }
 
         private void ModelEditor_TextEntered(object sender, TextCompositionEventArgs e) {
-            if (!char.IsLetterOrDigit(e.Text[0]) && e.Text[0] != '.') {
+            int caret = ModelEditor.CaretOffset;
+
+            // --- Dot: member access completion ---
+            if (e.Text == ".") {
+                string src = ModelEditor.Text;
+
+                // Walk back from the dot to find the identifier before it
+                int nameEnd = caret - 1;
+                int nameStart = nameEnd;
+                while (nameStart > 0 && (char.IsLetterOrDigit(src[nameStart - 1]) || src[nameStart - 1] == '_'))
+                    nameStart--;
+
+                string exprName = src[nameStart..nameEnd];
+                if (string.IsNullOrEmpty(exprName)) return;
+
+                var memberItems = ModelIntelliSense.GetMemberCompletions(src, exprName).ToList();
+                if (memberItems.Count == 0) return;
+
+                _csCompletionWindow = new CompletionWindow(ModelEditor.TextArea);
+                _csCompletionWindow.StartOffset = caret; // replace only what's typed after the dot
+                foreach (var item in memberItems)
+                    _csCompletionWindow.CompletionList.CompletionData.Add(item);
+
+                _csCompletionWindow.Show();
+                _csCompletionWindow.Closed += (_, _) => _csCompletionWindow = null;
                 return;
             }
 
-            int caret = ModelEditor.CaretOffset;
-            int start = TextUtilities.GetNextCaretPosition(ModelEditor.Document, caret, LogicalDirection.Backward, CaretPositioningMode.WordStart);
-            if (start < 0) {
-                start = 0;
-            }
+            // --- Alphanumeric: keyword + type name completion ---
+            if (!char.IsLetterOrDigit(e.Text[0]) && e.Text[0] != '_') return;
 
-            int length = caret - start;
-            string word = length > 0 ? ModelEditor.Document.GetText(start, length) : "";
+            int wordStart = TextUtilities.GetNextCaretPosition(
+                ModelEditor.Document, caret, LogicalDirection.Backward, CaretPositioningMode.WordStart);
+            if (wordStart < 0) wordStart = 0;
 
-            _csCompletionWindow = new(ModelEditor.TextArea);
-            IList<ICompletionData> data = _csCompletionWindow.CompletionList.CompletionData;
+            string word = caret > wordStart ? ModelEditor.Document.GetText(wordStart, caret - wordStart) : "";
+            if (string.IsNullOrEmpty(word)) return;
 
-            foreach (string keyword in CSAutoComplete.CSKeyWords) {
-                if (keyword.StartsWith(word, StringComparison.InvariantCultureIgnoreCase)) {
-                    data.Add(new CSCompletionData(keyword));
-                }
-            }
+            var items = new List<ICompletionData>();
 
-            if (data.Count > 0) {
-                _csCompletionWindow.Show();
-                _csCompletionWindow.Closed += (o, args) => _csCompletionWindow = null;
-            } else {
-                _csCompletionWindow = null;
-            }
+            foreach (string keyword in CSAutoComplete.CSKeyWords)
+                if (keyword.StartsWith(word, StringComparison.OrdinalIgnoreCase))
+                    items.Add(new CSCompletionData(keyword));
+
+            items.AddRange(ModelIntelliSense.GetTypeCompletions(word));
+
+            if (items.Count == 0) return;
+
+            _csCompletionWindow = new CompletionWindow(ModelEditor.TextArea);
+            // Set StartOffset to word start so the full typed prefix is replaced on completion
+            _csCompletionWindow.StartOffset = wordStart;
+            foreach (var item in items)
+                _csCompletionWindow.CompletionList.CompletionData.Add(item);
+
+            _csCompletionWindow.Show();
+            _csCompletionWindow.Closed += (_, _) => _csCompletionWindow = null;
         }
 
         private void ModelEditor_TextEntering(object sender, TextCompositionEventArgs e) {
-            if (_csCompletionWindow == null) {
-                return;
-            }
-
-            if (e.Text.Length > 0 && !char.IsLetterOrDigit(e.Text[0])) {
+            if (_csCompletionWindow == null) return;
+            if (e.Text.Length > 0 && !char.IsLetterOrDigit(e.Text[0]) && e.Text[0] != '_')
                 _csCompletionWindow.CompletionList.RequestInsertion(e);
-            }
         }
 
         private void ModelEditor_KeyDown(object sender, KeyEventArgs e) {
@@ -260,7 +307,7 @@ namespace ScryberHotReloader {
         }
 
 
-        public static object? CompileAndInstantiateAnyModel(string sourceCode) {
+        public static object? CompileAndInstantiateAnyModel(string sourceCode, IServiceProvider? services = null) {
             if (string.IsNullOrEmpty(sourceCode)) {
                 return null;
             }
@@ -284,14 +331,25 @@ namespace ScryberHotReloader {
             ms.Seek(0, SeekOrigin.Begin);
             Assembly assembly = Assembly.Load(ms.ToArray());
 
-            Type? modelType = assembly.GetTypes().FirstOrDefault(t => t.GetConstructor([]) != null);
+            // When services are available prefer the first class whose constructor can be satisfied.
+            // Fall back to a parameterless constructor so existing models without DI keep working.
+            Type? modelType = services != null
+                ? assembly.GetTypes().FirstOrDefault(t => t.IsPublic && !t.IsAbstract)
+                : assembly.GetTypes().FirstOrDefault(t => t.GetConstructor([]) != null);
 
             if (modelType == null) {
-                MessageBox.Show("No suitable public class with a parameterless constructor was found in the model.", "Compile Error");
+                MessageBox.Show("No suitable public class was found in the model.", "Compile Error");
                 return null;
             }
 
-            return Activator.CreateInstance(modelType);
+            try {
+                return services != null
+                    ? ActivatorUtilities.CreateInstance(services, modelType)
+                    : Activator.CreateInstance(modelType);
+            } catch (Exception ex) {
+                MessageBox.Show($"Failed to instantiate model:\n\n{ex.InnerException?.Message ?? ex.Message}", "Model Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                return null;
+            }
         }
 
         private void MinimizeButton_Click(object sender, RoutedEventArgs e) {
@@ -328,6 +386,159 @@ namespace ScryberHotReloader {
             } else {
                 DragMove();
             }
+        }
+
+        private void ReloadPlugins_Click(object sender, RoutedEventArgs e) {
+            var (provider, warnings) = PluginLoader.Load(_currentFilePath);
+            _serviceProvider = provider;
+
+            string status = provider != null ? "Plugins loaded successfully." : "No plugin config (scryber-plugins.json) found next to the HTML file.";
+            string detail = warnings.Length > 0 ? "\n\nWarnings:\n" + string.Join("\n", warnings) : "";
+            MessageBox.Show(status + detail, "Plugins", MessageBoxButton.OK,
+                provider != null ? MessageBoxImage.Information : MessageBoxImage.Warning);
+        }
+
+        private void OpenPluginsConfig_Click(object sender, RoutedEventArgs e) {
+            string dir = !string.IsNullOrEmpty(_currentFilePath)
+                ? System.IO.Path.GetDirectoryName(_currentFilePath)!
+                : Directory.GetCurrentDirectory();
+
+            string configPath = System.IO.Path.Combine(dir, "scryber-plugins.json");
+
+            if (!File.Exists(configPath)) {
+                File.WriteAllText(configPath, """
+                    {
+                      "assemblyDirectory": "C:\\path\\to\\your\\app\\bin\\Debug\\net9.0",
+                      "assemblies": [
+                        "MyApp.Interfaces.dll",
+                        "MyApp.Business.dll"
+                      ]
+                    }
+                    """, Encoding.UTF8);
+            }
+
+            Process.Start(new ProcessStartInfo { FileName = configPath, UseShellExecute = true });
+        }
+
+        private ICSharpCode.AvalonEdit.TextEditor ActiveEditor =>
+            EditorTabs.SelectedIndex == 0 ? HtmlEditor : ModelEditor;
+
+        private void EditorTabs_SelectionChanged(object sender, SelectionChangedEventArgs e) {
+            if (FindReplacePanel.Visibility == Visibility.Visible)
+                UpdateFindMatches();
+        }
+
+        private void OpenFindPanel(bool showReplace) {
+            FindReplacePanel.Visibility = Visibility.Visible;
+            ReplaceRow.Visibility = showReplace ? Visibility.Visible : Visibility.Collapsed;
+            FindBox.Focus();
+            FindBox.SelectAll();
+            UpdateFindMatches();
+        }
+
+        private void CloseFind() {
+            FindReplacePanel.Visibility = Visibility.Collapsed;
+            _findMatches.Clear();
+            _currentMatchIndex = -1;
+            MatchCountText.Text = "";
+            ActiveEditor.Focus();
+        }
+
+        private void CloseFind_Click(object sender, RoutedEventArgs e) => CloseFind();
+
+        private void FindBox_TextChanged(object sender, TextChangedEventArgs e) => UpdateFindMatches();
+
+        private void UpdateFindMatches() {
+            _findMatches.Clear();
+
+            string find = FindBox.Text;
+            if (string.IsNullOrEmpty(find)) {
+                _currentMatchIndex = -1;
+                MatchCountText.Text = "";
+                return;
+            }
+
+            string text = ActiveEditor.Text;
+            int index = 0;
+            while (true) {
+                int pos = text.IndexOf(find, index, StringComparison.OrdinalIgnoreCase);
+                if (pos < 0) break;
+                _findMatches.Add(pos);
+                index = pos + 1;
+            }
+
+            if (_findMatches.Count > 0) {
+                int caret = ActiveEditor.CaretOffset;
+                _currentMatchIndex = _findMatches.FindIndex(m => m >= caret);
+                if (_currentMatchIndex < 0) _currentMatchIndex = 0;
+                NavigateToMatch(_currentMatchIndex);
+            } else {
+                _currentMatchIndex = -1;
+            }
+
+            UpdateMatchCountText();
+        }
+
+        private void UpdateMatchCountText() {
+            bool noResults = _findMatches.Count == 0 && FindBox.Text.Length > 0;
+            MatchCountText.Text = noResults ? "No results"
+                : _findMatches.Count > 0 ? $"{_currentMatchIndex + 1}/{_findMatches.Count}"
+                : "";
+            MatchCountText.Foreground = noResults
+                ? new SolidColorBrush(Color.FromRgb(0xF4, 0x87, 0x71))
+                : new SolidColorBrush(Color.FromRgb(0x88, 0x88, 0x88));
+        }
+
+        private void NavigateToMatch(int index) {
+            if (index < 0 || index >= _findMatches.Count) return;
+            int offset = _findMatches[index];
+            ActiveEditor.Select(offset, FindBox.Text.Length);
+            ActiveEditor.ScrollToLine(ActiveEditor.Document.GetLineByOffset(offset).LineNumber);
+        }
+
+        private void FindNext_Click(object sender, RoutedEventArgs e) => MoveToMatch(1);
+        private void FindPrev_Click(object sender, RoutedEventArgs e) => MoveToMatch(-1);
+
+        private void MoveToMatch(int direction) {
+            if (_findMatches.Count == 0) return;
+            _currentMatchIndex = (_currentMatchIndex + direction + _findMatches.Count) % _findMatches.Count;
+            NavigateToMatch(_currentMatchIndex);
+            UpdateMatchCountText();
+        }
+
+        private void FindBox_KeyDown(object sender, KeyEventArgs e) {
+            if (e.Key == Key.Enter) {
+                MoveToMatch(Keyboard.Modifiers == ModifierKeys.Shift ? -1 : 1);
+                e.Handled = true;
+            } else if (e.Key == Key.Escape) {
+                CloseFind();
+                e.Handled = true;
+            }
+        }
+
+        private void ReplaceBox_KeyDown(object sender, KeyEventArgs e) {
+            if (e.Key == Key.Enter) {
+                ReplaceOne_Click(sender, new RoutedEventArgs());
+                e.Handled = true;
+            } else if (e.Key == Key.Escape) {
+                CloseFind();
+                e.Handled = true;
+            }
+        }
+
+        private void ReplaceOne_Click(object sender, RoutedEventArgs e) {
+            if (_findMatches.Count == 0 || _currentMatchIndex < 0) return;
+            int offset = _findMatches[_currentMatchIndex];
+            ActiveEditor.Document.Replace(offset, FindBox.Text.Length, ReplaceBox.Text);
+            UpdateFindMatches();
+        }
+
+        private void ReplaceAll_Click(object sender, RoutedEventArgs e) {
+            if (string.IsNullOrEmpty(FindBox.Text)) return;
+            UpdateFindMatches();
+            for (int i = _findMatches.Count - 1; i >= 0; i--)
+                ActiveEditor.Document.Replace(_findMatches[i], FindBox.Text.Length, ReplaceBox.Text);
+            UpdateFindMatches();
         }
     }
 }

@@ -146,6 +146,45 @@
             </Setter>
         </Style>
 
+        <Style x:Key="FindTextBoxStyle" TargetType="TextBox">
+            <Setter Property="Background" Value="#3C3C3C"/>
+            <Setter Property="Foreground" Value="#D4D4D4"/>
+            <Setter Property="BorderBrush" Value="#555"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="5,3"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="CaretBrush" Value="#AEAFAD"/>
+            <Setter Property="FontFamily" Value="Consolas"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Style.Triggers>
+                <Trigger Property="IsFocused" Value="True">
+                    <Setter Property="BorderBrush" Value="#007ACC"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="FindPanelButton" TargetType="Button">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="#D4D4D4"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="MinHeight" Value="22"/>
+            <Setter Property="Padding" Value="4,2"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#3F3F46"/>
+                    <Setter Property="BorderBrush" Value="#555"/>
+                </Trigger>
+                <Trigger Property="IsPressed" Value="True">
+                    <Setter Property="Background" Value="#007ACC"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
     </Window.Resources>
 
     <!-- Layout -->
@@ -170,6 +209,10 @@
                         <MenuItem Header="Open HTML" Click="OpenHtml_Click"/>
                         <MenuItem Header="Save HTML" Click="SaveHtml_Click"/>
                         <MenuItem Header="Save As..." Click="SaveAsHtml_Click"/>
+                    </MenuItem>
+                    <MenuItem Header="Plugins">
+                        <MenuItem Header="Reload Plugins" Click="ReloadPlugins_Click"/>
+                        <MenuItem Header="Open Config..." Click="OpenPluginsConfig_Click"/>
                     </MenuItem>
                 </Menu>
 
@@ -208,7 +251,8 @@
             </Grid.ColumnDefinitions>
 
             <!-- Editor Tabs -->
-            <TabControl Grid.Column="0" Background="#1e1e1e" BorderThickness="1" BorderBrush="#444">
+            <Grid Grid.Column="0">
+            <TabControl x:Name="EditorTabs" Background="#1e1e1e" BorderThickness="1" BorderBrush="#444" SelectionChanged="EditorTabs_SelectionChanged">
                 <TabItem Header="HTML">
                     <avalonedit:TextEditor Name="HtmlEditor"
                                            Background="#1e1e1e" Foreground="#d4d4d4"
@@ -229,6 +273,44 @@
                                            VerticalScrollBarVisibility="Auto"/>
                 </TabItem>
             </TabControl>
+
+            <!-- Find/Replace overlay panel -->
+            <Border x:Name="FindReplacePanel"
+                    Visibility="Collapsed"
+                    VerticalAlignment="Top" HorizontalAlignment="Right"
+                    Background="#2D2D30" BorderBrush="#555" BorderThickness="1"
+                    CornerRadius="4" Padding="10,8" Margin="0,30,4,0"
+                    Panel.ZIndex="10">
+                <StackPanel>
+                    <!-- Find Row -->
+                    <DockPanel LastChildFill="True">
+                        <Button DockPanel.Dock="Right" Content="✕" Click="CloseFind_Click"
+                                Style="{StaticResource FindPanelButton}" Width="22" Height="22" Margin="2,0,0,0" ToolTip="Close (Esc)"/>
+                        <Button DockPanel.Dock="Right" Content="▼" Click="FindNext_Click"
+                                Style="{StaticResource FindPanelButton}" Width="22" Height="22" Margin="2,0,0,0" ToolTip="Next match (Enter)"/>
+                        <Button DockPanel.Dock="Right" Content="▲" Click="FindPrev_Click"
+                                Style="{StaticResource FindPanelButton}" Width="22" Height="22" Margin="2,0,0,0" ToolTip="Previous match (Shift+Enter)"/>
+                        <TextBlock x:Name="MatchCountText" DockPanel.Dock="Right"
+                                   Foreground="#888" VerticalAlignment="Center"
+                                   FontSize="11" MinWidth="52" TextAlignment="Right" Margin="6,0,2,0"/>
+                        <TextBox x:Name="FindBox" MinWidth="200"
+                                 Style="{StaticResource FindTextBoxStyle}"
+                                 KeyDown="FindBox_KeyDown" TextChanged="FindBox_TextChanged"/>
+                    </DockPanel>
+
+                    <!-- Replace Row (hidden when using Find only) -->
+                    <DockPanel x:Name="ReplaceRow" Visibility="Collapsed" Margin="0,6,0,0" LastChildFill="True">
+                        <Button DockPanel.Dock="Right" Content="All" Click="ReplaceAll_Click"
+                                Style="{StaticResource FindPanelButton}" Padding="8,3" Margin="2,0,0,0" ToolTip="Replace all"/>
+                        <Button DockPanel.Dock="Right" Content="Replace" Click="ReplaceOne_Click"
+                                Style="{StaticResource FindPanelButton}" Padding="8,3" Margin="2,0,0,0" ToolTip="Replace current (Enter)"/>
+                        <TextBox x:Name="ReplaceBox" MinWidth="200"
+                                 Style="{StaticResource FindTextBoxStyle}"
+                                 KeyDown="ReplaceBox_KeyDown"/>
+                    </DockPanel>
+                </StackPanel>
+            </Border>
+            </Grid>
 
             <!-- Splitter -->
             <GridSplitter Grid.Column="1"
