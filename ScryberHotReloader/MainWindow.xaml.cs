@@ -523,10 +523,16 @@ namespace ScryberHotReloader {
             }
 
             try {
-                var runner = services != null
-                    ? (IScryberRunner)ActivatorUtilities.CreateInstance(services, runnerTypes[0])
-                    : (IScryberRunner)Activator.CreateInstance(runnerTypes[0])!;
-                return runner.GetModels();
+                if (services != null) {
+                    // Create a scope so DbContext and other scoped services resolve correctly.
+                    // The scope lives only for the duration of GetModels() then disposes cleanly.
+                    using var scope = services.CreateScope();
+                    var runner = (IScryberRunner)ActivatorUtilities.CreateInstance(scope.ServiceProvider, runnerTypes[0]);
+                    return runner.GetModels();
+                } else {
+                    var runner = (IScryberRunner)Activator.CreateInstance(runnerTypes[0])!;
+                    return runner.GetModels();
+                }
             } catch (Exception ex) {
                 MessageBox.Show($"Failed to run model:\n\n{ex.InnerException?.Message ?? ex.Message}", "Model Error", MessageBoxButton.OK, MessageBoxImage.Error);
                 return null;
