@@ -14,20 +14,61 @@ internal static class PluginLoader {
     // Updated each time Load() is called so it always reflects the latest config.
     private static string? _resolverBaseDir;
     private static bool _resolverRegistered;
+    private static string[]? _sharedFrameworkDirs;
 
     private static Assembly? OnAssemblyResolve(object? _, ResolveEventArgs args) {
         if (_resolverBaseDir == null) return null;
         var name = new AssemblyName(args.Name);
 
-        // Return the already-loaded copy if present — loading a second copy of the same
-        // assembly name from a different path (e.g. DI.Abstractions in the user's build
-        // output when we already have it from our own NuGet cache) throws FileLoadException.
+        // Return the already-loaded copy to avoid double-load conflicts (e.g. DI.Abstractions
+        // already loaded from our NuGet cache, also present in the user's bin folder).
         var existing = AppDomain.CurrentDomain.GetAssemblies()
             .FirstOrDefault(a => a.GetName().Name == name.Name);
         if (existing != null) return existing;
 
-        string candidate = System.IO.Path.Combine(_resolverBaseDir, name.Name + ".dll");
-        return File.Exists(candidate) ? Assembly.LoadFrom(candidate) : null;
+        string dllName = name.Name + ".dll";
+
+        // 1. User's build output folder.
+        string candidate = Path.Combine(_resolverBaseDir, dllName);
+        if (File.Exists(candidate)) return Assembly.LoadFrom(candidate);
+
+        // 2. .NET shared framework directories (AspNetCore.App, WindowsDesktop.App, etc.)
+        // Needed when the user's app is framework-dependent and assemblies like
+        // Microsoft.Extensions.Hosting.Abstractions live in the shared runtime, not bin.
+        foreach (string dir in SharedFrameworkDirs()) {
+            candidate = Path.Combine(dir, dllName);
+            if (File.Exists(candidate)) return Assembly.LoadFrom(candidate);
+        }
+
+        return null;
+    }
+
+    private static string[] SharedFrameworkDirs() {
+        if (_sharedFrameworkDirs != null) return _sharedFrameworkDirs;
+
+        var dirs = new List<string>();
+        try {
+            // typeof(object) lives in dotnet/shared/Microsoft.NETCore.App/{version}/
+            // Two levels up is the 'shared' folder that also contains AspNetCore.App etc.
+            string? versionDir  = Path.GetDirectoryName(typeof(object).Assembly.Location);
+            string? frameworkDir = Path.GetDirectoryName(versionDir);
+            string? sharedDir   = Path.GetDirectoryName(frameworkDir);
+
+            if (sharedDir != null && Directory.Exists(sharedDir)) {
+                foreach (string fw in Directory.GetDirectories(sharedDir)) {
+                    // All versions, newest first (parse properly to avoid string-sort bugs).
+                    foreach (string ver in Directory.GetDirectories(fw)
+                        .OrderByDescending(d => {
+                            Version.TryParse(Path.GetFileName(d), out var v);
+                            return v ?? new Version(0, 0);
+                        }))
+                        dirs.Add(ver);
+                }
+            }
+        } catch { /* non-critical — resolver just returns null */ }
+
+        _sharedFrameworkDirs = [.. dirs];
+        return _sharedFrameworkDirs;
     }
 
     /// <summary>
