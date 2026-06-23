@@ -201,10 +201,10 @@ namespace ScryberHotReloader {
             File.WriteAllText(startupFilePath, StartupEditor.Text, Encoding.UTF8);
 
             // 1. Load plugin assemblies so types are available to Roslyn and the Startup tab
-            var (assemblies, asmWarnings) = PluginLoader.LoadAssembliesOnly(_currentFilePath);
+            var (assemblies, pluginPaths, asmWarnings) = PluginLoader.LoadAssembliesOnly(_currentFilePath);
 
             // 2. Compile the Startup tab — takes priority over convention registrar
-            _serviceProvider = CompileStartupServices(StartupEditor.Text);
+            _serviceProvider = CompileStartupServices(StartupEditor.Text, pluginPaths);
 
             // 3. Fall back to convention registrar (ScryberPluginRegistrar / Program / Startup)
             if (_serviceProvider == null && assemblies.Count > 0) {
@@ -333,13 +333,26 @@ namespace ScryberHotReloader {
         }
 
 
-        private static IServiceProvider? CompileStartupServices(string sourceCode) {
+        private static IServiceProvider? CompileStartupServices(string sourceCode, string[]? pluginPaths = null) {
             if (string.IsNullOrWhiteSpace(sourceCode)) return null;
 
-            var refs = AppDomain.CurrentDomain.GetAssemblies()
-                .Where(a => !a.IsDynamic && !string.IsNullOrEmpty(a.Location))
-                .Select(a => MetadataReference.CreateFromFile(a.Location))
-                .Cast<MetadataReference>();
+            var refSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var refs   = new List<MetadataReference>();
+
+            void TryAddRef(string path) {
+                if (!refSet.Add(path) || !File.Exists(path)) return;
+                try { refs.Add(MetadataReference.CreateFromFile(path)); } catch { }
+            }
+
+            // AppDomain assemblies (hot reloader's own + successfully loaded plugins)
+            foreach (var a in AppDomain.CurrentDomain.GetAssemblies()) {
+                if (!a.IsDynamic && !string.IsNullOrEmpty(a.Location))
+                    TryAddRef(a.Location);
+            }
+
+            // Plugin paths from config — adds types even if runtime load failed for a transitive dep
+            if (pluginPaths != null)
+                foreach (var p in pluginPaths) TryAddRef(p);
 
             var compilation = CSharpCompilation.Create(
                 "StartupAssembly",
@@ -486,10 +499,10 @@ namespace ScryberHotReloader {
         }
 
         private void ReloadPlugins_Click(object sender, RoutedEventArgs e) {
-            var (assemblies, asmWarnings) = PluginLoader.LoadAssembliesOnly(_currentFilePath);
+            var (assemblies, pluginPaths, asmWarnings) = PluginLoader.LoadAssembliesOnly(_currentFilePath);
 
             // Startup tab always takes priority; fall back to convention registrar if it yields nothing
-            _serviceProvider = CompileStartupServices(StartupEditor.Text);
+            _serviceProvider = CompileStartupServices(StartupEditor.Text, pluginPaths);
 
             string[] regWarnings = [];
             if (_serviceProvider == null && assemblies.Count > 0) {

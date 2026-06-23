@@ -73,19 +73,20 @@ internal static class PluginLoader {
 
     /// <summary>
     /// Loads plugin assemblies from scryber-plugins.json without calling any registrar.
-    /// Call this before compiling Startup tab code so plugin types are available to Roslyn.
+    /// Also returns the resolved file paths attempted so Roslyn can reference them directly,
+    /// even for assemblies that failed to load at runtime due to missing transitive deps.
     /// </summary>
-    public static (List<Assembly> Assemblies, string[] Warnings) LoadAssembliesOnly(string? htmlFilePath) {
+    public static (List<Assembly> Assemblies, string[] PluginPaths, string[] Warnings) LoadAssembliesOnly(string? htmlFilePath) {
         var warnings = new List<string>();
 
         string? configPath = FindConfig(htmlFilePath);
-        if (configPath == null) return ([], []);
+        if (configPath == null) return ([], [], []);
 
         PluginConfig? config = ReadConfig(configPath, warnings);
-        if (config == null || config.Assemblies.Count == 0) return ([], [.. warnings]);
+        if (config == null || config.Assemblies.Count == 0) return ([], [], [.. warnings]);
 
-        var assemblies = LoadAssemblies(config, configPath, warnings);
-        return (assemblies, [.. warnings]);
+        var (assemblies, paths) = LoadAssemblies(config, configPath, warnings);
+        return (assemblies, [.. paths], [.. warnings]);
     }
 
     /// <summary>
@@ -112,7 +113,7 @@ internal static class PluginLoader {
     /// Preserves the original single-call behaviour for code paths that don't use the Startup tab.
     /// </summary>
     public static (IServiceProvider? Provider, string[] Warnings) Load(string? htmlFilePath) {
-        var (assemblies, asmWarnings) = LoadAssembliesOnly(htmlFilePath);
+        var (assemblies, _, asmWarnings) = LoadAssembliesOnly(htmlFilePath);
         if (assemblies.Count == 0) return (null, asmWarnings);
 
         var (provider, regWarnings) = BuildFromRegistrar(assemblies);
@@ -144,7 +145,8 @@ internal static class PluginLoader {
         }
     }
 
-    private static List<Assembly> LoadAssemblies(PluginConfig config, string configPath, List<string> warnings) {
+    private static (List<Assembly> Loaded, List<string> Paths) LoadAssemblies(
+            PluginConfig config, string configPath, List<string> warnings) {
         string baseDir = !string.IsNullOrEmpty(config.AssemblyDirectory)
             ? config.AssemblyDirectory
             : Path.GetDirectoryName(configPath) ?? Directory.GetCurrentDirectory();
@@ -158,9 +160,11 @@ internal static class PluginLoader {
         }
 
         var loaded = new List<Assembly>();
+        var paths  = new List<string>();
 
         foreach (string entry in config.Assemblies) {
             string fullPath = Path.IsPathRooted(entry) ? entry : Path.Combine(baseDir, entry);
+            paths.Add(fullPath); // track path even if runtime load fails — Roslyn still needs it
             try {
                 loaded.Add(Assembly.LoadFrom(fullPath));
             } catch (Exception ex) {
@@ -168,7 +172,7 @@ internal static class PluginLoader {
             }
         }
 
-        return loaded;
+        return (loaded, paths);
     }
 
     private static bool InvokeRegistrar(List<Assembly> assemblies, IServiceCollection services, string? explicitRegistrar, List<string> warnings) {
