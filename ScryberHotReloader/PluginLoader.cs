@@ -61,19 +61,26 @@ internal static class PluginLoader {
         try {
             // typeof(object) lives in dotnet/shared/Microsoft.NETCore.App/{version}/
             // Two levels up is the 'shared' folder that also contains AspNetCore.App etc.
-            string? versionDir  = Path.GetDirectoryName(typeof(object).Assembly.Location);
-            string? frameworkDir = Path.GetDirectoryName(versionDir);
-            string? sharedDir   = Path.GetDirectoryName(frameworkDir);
+            string? currentVersionDir = Path.GetDirectoryName(typeof(object).Assembly.Location);
+            string? frameworkDir      = Path.GetDirectoryName(currentVersionDir);
+            string? sharedDir         = Path.GetDirectoryName(frameworkDir);
 
-            if (sharedDir != null && Directory.Exists(sharedDir)) {
+            // Only include framework dirs that match our runtime's major.minor — this prevents
+            // adding .NET 10 assemblies (DI.Abstractions v10 etc.) when we're running on .NET 9,
+            // which would cause version-conflict errors at runtime.
+            Version.TryParse(Path.GetFileName(currentVersionDir), out var runtimeVer);
+
+            if (sharedDir != null && runtimeVer != null && Directory.Exists(sharedDir)) {
                 foreach (string fw in Directory.GetDirectories(sharedDir)) {
-                    // All versions, newest first (parse properly to avoid string-sort bugs).
-                    foreach (string ver in Directory.GetDirectories(fw)
+                    string? match = Directory.GetDirectories(fw)
+                        .Where(d => Version.TryParse(Path.GetFileName(d), out var v)
+                                    && v.Major == runtimeVer.Major && v.Minor == runtimeVer.Minor)
                         .OrderByDescending(d => {
                             Version.TryParse(Path.GetFileName(d), out var v);
                             return v ?? new Version(0, 0);
-                        }))
-                        dirs.Add(ver);
+                        })
+                        .FirstOrDefault();
+                    if (match != null) dirs.Add(match);
                 }
             }
         } catch { /* non-critical — resolver just returns null */ }
