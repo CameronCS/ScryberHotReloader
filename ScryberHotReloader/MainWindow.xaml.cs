@@ -336,29 +336,36 @@ namespace ScryberHotReloader {
         private static IServiceProvider? CompileStartupServices(string sourceCode, string[]? pluginPaths = null) {
             if (string.IsNullOrWhiteSpace(sourceCode)) return null;
 
-            var refSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            var refs   = new List<MetadataReference>();
+            var refPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var refNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var refs     = new List<MetadataReference>();
 
+            // Step 1 — AppDomain assemblies first. They establish the canonical version of every
+            // assembly the hot reloader is compiled against (System.Runtime, DI.Abstractions, etc.).
+            foreach (var a in AppDomain.CurrentDomain.GetAssemblies()) {
+                if (a.IsDynamic || string.IsNullOrEmpty(a.Location) || !refPaths.Add(a.Location)) continue;
+                refNames.Add(a.GetName().Name ?? "");
+                try { refs.Add(MetadataReference.CreateFromFile(a.Location)); } catch { }
+            }
+
+            // Step 2 — add a DLL by path, skipping if the same path OR same assembly name is already
+            // covered. This prevents CS0433/CS0518 from duplicate/conflicting versions of the same
+            // assembly (e.g. System.Runtime v9 from AppDomain vs v10 from a .NET 10 framework dir).
             void TryAddRef(string path) {
-                if (!refSet.Add(path) || !File.Exists(path)) return;
+                if (!refPaths.Add(path) || !File.Exists(path)) return;
                 try {
-                    AssemblyName.GetAssemblyName(path); // throws BadImageFormatException for native DLLs
+                    var name = AssemblyName.GetAssemblyName(path); // throws for native DLLs
+                    if (name.Name != null && !refNames.Add(name.Name)) return;
                     refs.Add(MetadataReference.CreateFromFile(path));
                 } catch { }
             }
 
-            // AppDomain assemblies (hot reloader's own + successfully loaded plugins)
-            foreach (var a in AppDomain.CurrentDomain.GetAssemblies()) {
-                if (!a.IsDynamic && !string.IsNullOrEmpty(a.Location))
-                    TryAddRef(a.Location);
-            }
-
-            // Plugin paths from config — adds types even if runtime load failed for a transitive dep
+            // Plugin paths from config — types visible to Roslyn even if runtime load failed
             if (pluginPaths != null)
                 foreach (var p in pluginPaths) TryAddRef(p);
 
-            // Scan the user's bin folder + .NET shared frameworks (AspNetCore.App, etc.)
-            // so Roslyn can resolve Microsoft.AspNetCore.*, EF Core, etc.
+            // Probe directories (bin folder + shared frameworks) — only adds names not yet covered,
+            // so Microsoft.AspNetCore.* comes in but System.Runtime / DI.Abstractions are skipped.
             foreach (var dir in PluginLoader.GetProbeDirectories()) {
                 if (!Directory.Exists(dir)) continue;
                 foreach (var dll in Directory.GetFiles(dir, "*.dll"))
