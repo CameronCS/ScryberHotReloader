@@ -31,8 +31,9 @@ public partial class PluginManagerWindow : Window {
 
             if (config == null) return;
 
-            AssemblyDirBox.Text = config.AssemblyDirectory ?? "";
-            RegistrarBox.Text   = config.Registrar ?? "";
+            AssemblyDirBox.Text  = config.AssemblyDirectory ?? "";
+            RegistrarBox.Text    = config.Registrar ?? "";
+            AppSettingsBox.Text  = config.AppSettingsPath ?? "";
 
             foreach (string asm in config.Assemblies)
                 _assemblies.Add(asm);
@@ -49,6 +50,15 @@ public partial class PluginManagerWindow : Window {
 
         if (dlg.ShowDialog() == true)
             AssemblyDirBox.Text = dlg.FolderName;
+    }
+
+    private void BrowseAppSettings_Click(object sender, RoutedEventArgs e) {
+        var dlg = new OpenFileDialog {
+            Title  = "Select appsettings.json",
+            Filter = "JSON Files (*.json)|*.json|All Files (*.*)|*.*"
+        };
+        if (dlg.ShowDialog() == true)
+            AppSettingsBox.Text = dlg.FileName;
     }
 
     private void AddAssembly_Click(object sender, RoutedEventArgs e) {
@@ -85,7 +95,8 @@ public partial class PluginManagerWindow : Window {
         var config = new PluginConfig {
             AssemblyDirectory = AssemblyDirBox.Text.Trim().Length > 0 ? AssemblyDirBox.Text.Trim() : null,
             Assemblies        = [.. _assemblies],
-            Registrar         = RegistrarBox.Text.Trim().Length > 0 ? RegistrarBox.Text.Trim() : null
+            Registrar         = RegistrarBox.Text.Trim().Length > 0 ? RegistrarBox.Text.Trim() : null,
+            AppSettingsPath   = AppSettingsBox.Text.Trim().Length > 0 ? AppSettingsBox.Text.Trim() : null
         };
 
         try {

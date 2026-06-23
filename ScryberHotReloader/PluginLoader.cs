@@ -135,17 +135,20 @@ internal static class PluginLoader {
     /// Also returns the resolved file paths attempted so Roslyn can reference them directly,
     /// even for assemblies that failed to load at runtime due to missing transitive deps.
     /// </summary>
-    public static (List<Assembly> Assemblies, string[] PluginPaths, string[] Warnings) LoadAssembliesOnly(string? htmlFilePath) {
+    public static (List<Assembly> Assemblies, string[] PluginPaths, string? AppSettingsPath, string[] Warnings) LoadAssembliesOnly(string? htmlFilePath) {
         var warnings = new List<string>();
 
         string? configPath = FindConfig(htmlFilePath);
-        if (configPath == null) return ([], [], []);
+        if (configPath == null) return ([], [], null, []);
 
         PluginConfig? config = ReadConfig(configPath, warnings);
-        if (config == null || config.Assemblies.Count == 0) return ([], [], [.. warnings]);
+        if (config == null) return ([], [], null, [.. warnings]);
+
+        string? appSettingsPath = config.AppSettingsPath;
+        if (config.Assemblies.Count == 0) return ([], [], appSettingsPath, [.. warnings]);
 
         var (assemblies, paths) = LoadAssemblies(config, configPath, warnings);
-        return (assemblies, [.. paths], [.. warnings]);
+        return (assemblies, [.. paths], appSettingsPath, [.. warnings]);
     }
 
     /// <summary>
@@ -172,7 +175,7 @@ internal static class PluginLoader {
     /// Preserves the original single-call behaviour for code paths that don't use the Startup tab.
     /// </summary>
     public static (IServiceProvider? Provider, string[] Warnings) Load(string? htmlFilePath) {
-        var (assemblies, _, asmWarnings) = LoadAssembliesOnly(htmlFilePath);
+        var (assemblies, _, _, asmWarnings) = LoadAssembliesOnly(htmlFilePath);
         if (assemblies.Count == 0) return (null, asmWarnings);
 
         var (provider, regWarnings) = BuildFromRegistrar(assemblies);

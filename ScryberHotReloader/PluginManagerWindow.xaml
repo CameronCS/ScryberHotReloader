@@ -1,7 +1,7 @@
 <Window x:Class="ScryberHotReloader.PluginManagerWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Plugin Manager" Height="480" Width="560"
+        Title="Plugin Manager" Height="540" Width="560"
         Background="#1e1e1e" Foreground="#D4D4D4"
         FontFamily="Segoe UI" FontSize="13"
         WindowStyle="None" AllowsTransparency="True"
@@ -202,8 +202,17 @@
 
                 <!-- Optional registrar -->
                 <TextBlock Text="REGISTRAR CLASS  (optional)" Style="{StaticResource DarkLabel}"/>
-                <TextBox x:Name="RegistrarBox" Style="{StaticResource DarkInput}"
+                <TextBox x:Name="RegistrarBox" Style="{StaticResource DarkInput}" Margin="0,0,0,16"
                          ToolTip="Fully-qualified class name, e.g. MyApp.Business.ScryberPluginRegistrar. Leave blank to use the ScryberPluginRegistrar convention."/>
+
+                <!-- App settings path -->
+                <TextBlock Text="APP SETTINGS  (optional)" Style="{StaticResource DarkLabel}"/>
+                <DockPanel>
+                    <Button DockPanel.Dock="Right" Content="Browse..." Click="BrowseAppSettings_Click"
+                            Style="{StaticResource GhostButton}" Margin="6,0,0,0" Padding="10,5"/>
+                    <TextBox x:Name="AppSettingsBox" Style="{StaticResource DarkInput}"
+                             ToolTip="Path to appsettings.json. Injected as IConfiguration into the Startup class constructor."/>
+                </DockPanel>
             </StackPanel>
 
             <!-- Footer -->

@@ -48,6 +48,7 @@ public partial class PresetManagerWindow : Window
         _suppressChange = true;
         NameBox.Text          = preset.Name;
         AssemblyDirBox.Text   = preset.AssemblyDirectory ?? "";
+        AppSettingsBox.Text   = preset.AppSettingsPath ?? "";
         StartupPreview.Text   = preset.StartupCode;
         _suppressChange = false;
     }
@@ -57,6 +58,7 @@ public partial class PresetManagerWindow : Window
         _suppressChange = true;
         NameBox.Text        = "";
         AssemblyDirBox.Text = "";
+        AppSettingsBox.Text = "";
         StartupPreview.Text = "";
         _suppressChange = false;
     }
@@ -86,6 +88,16 @@ public partial class PresetManagerWindow : Window
         if (preset == null) return;
         preset.AssemblyDirectory = string.IsNullOrWhiteSpace(AssemblyDirBox.Text)
             ? null : AssemblyDirBox.Text.Trim();
+        PresetManager.Save(preset);
+    }
+
+    private void AppSettingsChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
+    {
+        if (_suppressChange) return;
+        var preset = PresetList.SelectedItem as PluginPreset;
+        if (preset == null) return;
+        preset.AppSettingsPath = string.IsNullOrWhiteSpace(AppSettingsBox.Text)
+            ? null : AppSettingsBox.Text.Trim();
         PresetManager.Save(preset);
     }
 
@@ -120,7 +132,8 @@ public partial class PresetManagerWindow : Window
             StartupCode       = _currentStartupCode,
             AssemblyDirectory = _currentPluginConfig?.AssemblyDirectory,
             Assemblies        = _currentPluginConfig?.Assemblies ?? [],
-            Registrar         = _currentPluginConfig?.Registrar
+            Registrar         = _currentPluginConfig?.Registrar,
+            AppSettingsPath   = _currentPluginConfig?.AppSettingsPath
         };
         PresetManager.Save(preset);
         RefreshList(name);
@@ -145,6 +158,25 @@ public partial class PresetManagerWindow : Window
             if (preset != null)
             {
                 preset.AssemblyDirectory = dlg.FolderName;
+                PresetManager.Save(preset);
+            }
+        }
+    }
+
+    private void BrowseAppSettings_Click(object sender, RoutedEventArgs e)
+    {
+        var dlg = new OpenFileDialog
+        {
+            Title  = "Select appsettings.json",
+            Filter = "JSON Files (*.json)|*.json|All Files (*.*)|*.*"
+        };
+        if (dlg.ShowDialog() == true)
+        {
+            AppSettingsBox.Text = dlg.FileName;
+            var preset = PresetList.SelectedItem as PluginPreset;
+            if (preset != null)
+            {
+                preset.AppSettingsPath = dlg.FileName;
                 PresetManager.Save(preset);
             }
         }

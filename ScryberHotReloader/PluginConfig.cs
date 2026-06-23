@@ -8,4 +8,8 @@ public sealed class PluginConfig {
     /// Omit to use the convention: any class named ScryberPluginRegistrar.
     /// </summary>
     public string? Registrar { get; set; }
+    /// <summary>
+    /// Path to the appsettings.json file injected as IConfiguration into the Startup class constructor.
+    /// </summary>
+    public string? AppSettingsPath { get; set; }
 }

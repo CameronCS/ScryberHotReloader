@@ -162,6 +162,8 @@
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
 
@@ -177,12 +179,20 @@
                                  TextChanged="DetailsChanged"/>
                     </DockPanel>
 
-                    <TextBlock Grid.Row="4" Style="{StaticResource Lbl}" Margin="0,0,0,4">
+                    <TextBlock Grid.Row="4" Text="App Settings (appsettings.json)" Style="{StaticResource Lbl}"/>
+                    <DockPanel Grid.Row="5" Margin="0,0,0,12">
+                        <Button DockPanel.Dock="Right" Content="Browse" Style="{StaticResource Btn}"
+                                Padding="10,5" Margin="6,0,0,0" Click="BrowseAppSettings_Click"/>
+                        <TextBox x:Name="AppSettingsBox" Style="{StaticResource Input}"
+                                 TextChanged="AppSettingsChanged"/>
+                    </DockPanel>
+
+                    <TextBlock Grid.Row="6" Style="{StaticResource Lbl}" Margin="0,0,0,4">
                         <Run Text="Startup Code"/>
                         <Run Foreground="#555" Text=" — read-only preview, edit in the Startup tab"/>
                     </TextBlock>
 
-                    <Border Grid.Row="5" BorderBrush="#444" BorderThickness="1">
+                    <Border Grid.Row="7" BorderBrush="#444" BorderThickness="1">
                         <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
                                       Background="#252526">
                             <TextBox x:Name="StartupPreview"

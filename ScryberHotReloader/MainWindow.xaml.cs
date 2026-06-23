@@ -16,6 +16,7 @@ using System.Windows;
 using System.Windows.Documents;
 using System.Windows.Input;
 using System.Xml;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using System.Diagnostics;
 using System.Windows.Controls;
@@ -201,10 +202,10 @@ namespace ScryberHotReloader {
             File.WriteAllText(startupFilePath, StartupEditor.Text, Encoding.UTF8);
 
             // 1. Load plugin assemblies so types are available to Roslyn and the Startup tab
-            var (assemblies, pluginPaths, asmWarnings) = PluginLoader.LoadAssembliesOnly(_currentFilePath);
+            var (assemblies, pluginPaths, appSettingsPath, asmWarnings) = PluginLoader.LoadAssembliesOnly(_currentFilePath);
 
             // 2. Compile the Startup tab — takes priority over convention registrar
-            _serviceProvider = CompileStartupServices(StartupEditor.Text, pluginPaths);
+            _serviceProvider = CompileStartupServices(StartupEditor.Text, pluginPaths, appSettingsPath);
 
             // 3. Fall back to convention registrar (ScryberPluginRegistrar / Program / Startup)
             if (_serviceProvider == null && assemblies.Count > 0) {
@@ -334,7 +335,7 @@ namespace ScryberHotReloader {
         }
 
 
-        private static IServiceProvider? CompileStartupServices(string sourceCode, string[]? pluginPaths = null) {
+        private static IServiceProvider? CompileStartupServices(string sourceCode, string[]? pluginPaths = null, string? appSettingsPath = null) {
             if (string.IsNullOrWhiteSpace(sourceCode)) return null;
 
             var refPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -394,22 +395,86 @@ namespace ScryberHotReloader {
             ms.Seek(0, SeekOrigin.Begin);
             var assembly = Assembly.Load(ms.ToArray());
 
-            // Find any class with a public static ConfigureServices(IServiceCollection) method
-            MethodInfo? method = assembly.GetTypes()
+            // --- Static ConfigureServices(IServiceCollection) — original convention ---
+            MethodInfo? staticMethod = assembly.GetTypes()
                 .Select(t => t.GetMethod("ConfigureServices",
                     BindingFlags.Public | BindingFlags.Static,
                     [typeof(IServiceCollection)]))
                 .FirstOrDefault(m => m != null);
 
-            if (method == null) return null; // empty / default — not an error
+            // --- Instance ConfigureServices(IServiceCollection) — ASP.NET Core Startup pattern ---
+            Type? instanceType = null;
+            MethodInfo? instanceMethod = null;
+            if (staticMethod == null) {
+                foreach (var t in assembly.GetTypes()) {
+                    var im = t.GetMethod("ConfigureServices",
+                        BindingFlags.Public | BindingFlags.Instance,
+                        [typeof(IServiceCollection)]);
+                    if (im != null) { instanceType = t; instanceMethod = im; break; }
+                }
+            }
+
+            if (staticMethod == null && instanceMethod == null) return null; // nothing to call — not an error
 
             var services = new ServiceCollection();
-            try {
-                method.Invoke(null, [services]);
-            } catch (Exception ex) {
-                MessageBox.Show($"ConfigureServices threw an exception:\n\n{ex.InnerException?.Message ?? ex.Message}",
-                    "Startup Error", MessageBoxButton.OK, MessageBoxImage.Error);
-                return null;
+
+            if (staticMethod != null) {
+                try {
+                    staticMethod.Invoke(null, [services]);
+                } catch (Exception ex) {
+                    MessageBox.Show($"ConfigureServices threw an exception:\n\n{ex.InnerException?.Message ?? ex.Message}",
+                        "Startup Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                    return null;
+                }
+            } else {
+                // Build IConfiguration from the appsettings path if provided
+                IConfiguration? configuration = null;
+                if (!string.IsNullOrEmpty(appSettingsPath) && File.Exists(appSettingsPath)) {
+                    try {
+                        configuration = new ConfigurationBuilder()
+                            .AddJsonFile(appSettingsPath, optional: false, reloadOnChange: false)
+                            .Build();
+                    } catch (Exception ex) {
+                        MessageBox.Show($"Failed to load appsettings.json:\n\n{ex.Message}",
+                            "Startup Warning", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    }
+                }
+
+                // Instantiate the Startup class: IConfiguration ctor, then parameterless
+                object? startupInstance;
+                var configCtor = instanceType!.GetConstructor([typeof(IConfiguration)]);
+                if (configCtor != null) {
+                    if (configuration == null) {
+                        MessageBox.Show(
+                            "The Startup class requires IConfiguration but no appsettings.json path is set.\n\n" +
+                            "Set it via Plugins → Manage Plugins...",
+                            "Startup Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                        return null;
+                    }
+                    try {
+                        startupInstance = configCtor.Invoke([configuration]);
+                    } catch (Exception ex) {
+                        MessageBox.Show($"Failed to instantiate Startup:\n\n{ex.InnerException?.Message ?? ex.Message}",
+                            "Startup Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                        return null;
+                    }
+                } else {
+                    try {
+                        startupInstance = Activator.CreateInstance(instanceType!);
+                    } catch (Exception ex) {
+                        MessageBox.Show($"Failed to instantiate Startup:\n\n{ex.InnerException?.Message ?? ex.Message}",
+                            "Startup Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                        return null;
+                    }
+                }
+
+                try {
+                    instanceMethod!.Invoke(startupInstance, [services]);
+                } catch (Exception ex) {
+                    MessageBox.Show($"ConfigureServices threw an exception:\n\n{ex.InnerException?.Message ?? ex.Message}",
+                        "Startup Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                    return null;
+                }
             }
 
             return services.BuildServiceProvider();
@@ -570,7 +635,8 @@ namespace ScryberHotReloader {
             var config = new PluginConfig {
                 AssemblyDirectory = preset.AssemblyDirectory,
                 Assemblies        = preset.Assemblies,
-                Registrar         = preset.Registrar
+                Registrar         = preset.Registrar,
+                AppSettingsPath   = preset.AppSettingsPath
             };
 
             string cfgPath = System.IO.Path.Combine(dir, "scryber-plugins.json");
@@ -578,8 +644,8 @@ namespace ScryberHotReloader {
                 new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
 
             // Reload plugins with the new config
-            var (assemblies, pluginPaths, asmWarnings) = PluginLoader.LoadAssembliesOnly(_currentFilePath);
-            _serviceProvider = CompileStartupServices(StartupEditor.Text, pluginPaths);
+            var (assemblies, pluginPaths, appSettingsPath, asmWarnings) = PluginLoader.LoadAssembliesOnly(_currentFilePath);
+            _serviceProvider = CompileStartupServices(StartupEditor.Text, pluginPaths, appSettingsPath);
 
             string[] regWarnings = [];
             if (_serviceProvider == null && assemblies.Count > 0) {
@@ -595,10 +661,10 @@ namespace ScryberHotReloader {
         }
 
         private void ReloadPlugins_Click(object sender, RoutedEventArgs e) {
-            var (assemblies, pluginPaths, asmWarnings) = PluginLoader.LoadAssembliesOnly(_currentFilePath);
+            var (assemblies, pluginPaths, appSettingsPath, asmWarnings) = PluginLoader.LoadAssembliesOnly(_currentFilePath);
 
             // Startup tab always takes priority; fall back to convention registrar if it yields nothing
-            _serviceProvider = CompileStartupServices(StartupEditor.Text, pluginPaths);
+            _serviceProvider = CompileStartupServices(StartupEditor.Text, pluginPaths, appSettingsPath);
 
             string[] regWarnings = [];
             if (_serviceProvider == null && assemblies.Count > 0) {
