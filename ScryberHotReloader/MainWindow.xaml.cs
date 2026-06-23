@@ -341,7 +341,10 @@ namespace ScryberHotReloader {
 
             void TryAddRef(string path) {
                 if (!refSet.Add(path) || !File.Exists(path)) return;
-                try { refs.Add(MetadataReference.CreateFromFile(path)); } catch { }
+                try {
+                    AssemblyName.GetAssemblyName(path); // throws BadImageFormatException for native DLLs
+                    refs.Add(MetadataReference.CreateFromFile(path));
+                } catch { }
             }
 
             // AppDomain assemblies (hot reloader's own + successfully loaded plugins)
