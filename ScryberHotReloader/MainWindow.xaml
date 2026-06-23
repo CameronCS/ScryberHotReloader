@@ -211,8 +211,8 @@
                         <MenuItem Header="Save As..." Click="SaveAsHtml_Click"/>
                     </MenuItem>
                     <MenuItem Header="Plugins">
+                        <MenuItem Header="Manage Plugins..." Click="ManagePlugins_Click"/>
                         <MenuItem Header="Reload Plugins" Click="ReloadPlugins_Click"/>
-                        <MenuItem Header="Open Config..." Click="OpenPluginsConfig_Click"/>
                     </MenuItem>
                 </Menu>
 
