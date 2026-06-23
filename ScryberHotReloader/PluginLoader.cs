@@ -43,6 +43,17 @@ internal static class PluginLoader {
         return null;
     }
 
+    /// <summary>
+    /// Returns directories to scan for Roslyn metadata references:
+    /// the user's build output folder and all .NET shared framework directories.
+    /// </summary>
+    public static string[] GetProbeDirectories() {
+        var dirs = new List<string>();
+        if (_resolverBaseDir != null) dirs.Add(_resolverBaseDir);
+        dirs.AddRange(SharedFrameworkDirs());
+        return [.. dirs];
+    }
+
     private static string[] SharedFrameworkDirs() {
         if (_sharedFrameworkDirs != null) return _sharedFrameworkDirs;
 

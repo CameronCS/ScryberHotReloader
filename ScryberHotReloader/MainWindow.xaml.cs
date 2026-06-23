@@ -354,6 +354,14 @@ namespace ScryberHotReloader {
             if (pluginPaths != null)
                 foreach (var p in pluginPaths) TryAddRef(p);
 
+            // Scan the user's bin folder + .NET shared frameworks (AspNetCore.App, etc.)
+            // so Roslyn can resolve Microsoft.AspNetCore.*, EF Core, etc.
+            foreach (var dir in PluginLoader.GetProbeDirectories()) {
+                if (!Directory.Exists(dir)) continue;
+                foreach (var dll in Directory.GetFiles(dir, "*.dll"))
+                    TryAddRef(dll);
+            }
+
             var compilation = CSharpCompilation.Create(
                 "StartupAssembly",
                 [CSharpSyntaxTree.ParseText(sourceCode)],
