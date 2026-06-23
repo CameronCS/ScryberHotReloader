@@ -534,7 +534,10 @@ namespace ScryberHotReloader {
                     return runner.GetModels();
                 }
             } catch (Exception ex) {
-                MessageBox.Show($"Failed to run model:\n\n{ex.InnerException?.Message ?? ex.Message}", "Model Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                var chain = new System.Text.StringBuilder();
+                var e = (Exception?)ex;
+                while (e != null) { chain.AppendLine(e.Message); e = e.InnerException; }
+                MessageBox.Show($"Failed to run model:\n\n{chain}", "Model Error", MessageBoxButton.OK, MessageBoxImage.Error);
                 return null;
             }
         }
