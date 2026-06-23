@@ -1,0 +1,224 @@
+<Window x:Class="ScryberHotReloader.PluginManagerWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Plugin Manager" Height="480" Width="560"
+        Background="#1e1e1e" Foreground="#D4D4D4"
+        FontFamily="Segoe UI" FontSize="13"
+        WindowStyle="None" AllowsTransparency="True"
+        ResizeMode="NoResize"
+        WindowStartupLocation="CenterOwner">
+
+    <Window.Resources>
+        <Style x:Key="DarkLabel" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#999"/>
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Margin" Value="0,0,0,4"/>
+        </Style>
+
+        <Style x:Key="DarkInput" TargetType="TextBox">
+            <Setter Property="Background" Value="#3C3C3C"/>
+            <Setter Property="Foreground" Value="#D4D4D4"/>
+            <Setter Property="BorderBrush" Value="#555"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="6,4"/>
+            <Setter Property="CaretBrush" Value="#AEAFAD"/>
+            <Setter Property="FontFamily" Value="Consolas"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Style.Triggers>
+                <Trigger Property="IsFocused" Value="True">
+                    <Setter Property="BorderBrush" Value="#007ACC"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="PrimaryButton" TargetType="Button">
+            <Setter Property="Background" Value="#007ACC"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="14,6"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}" CornerRadius="3" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#1A8AD4"/>
+                </Trigger>
+                <Trigger Property="IsPressed" Value="True">
+                    <Setter Property="Background" Value="#005A9E"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="GhostButton" TargetType="Button">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="#D4D4D4"/>
+            <Setter Property="BorderBrush" Value="#555"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="14,6"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="3" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#2D2D30"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="IconButton" TargetType="Button" BasedOn="{StaticResource GhostButton}">
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="6,2"/>
+            <Setter Property="Foreground" Value="#888"/>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Foreground" Value="#E06C75"/>
+                    <Setter Property="Background" Value="Transparent"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+    </Window.Resources>
+
+    <Border BorderBrush="#444" BorderThickness="1">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="40"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <!-- Title bar -->
+            <Border Grid.Row="0" Background="#252526" MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
+                <Grid>
+                    <TextBlock Text="Plugin Manager" Foreground="#D4D4D4"
+                               VerticalAlignment="Center" Margin="14,0,0,0"
+                               FontWeight="SemiBold"/>
+                    <Button Content="&#xE8BB;" HorizontalAlignment="Right"
+                            Click="Close_Click" Foreground="#888"
+                            Background="Transparent" BorderThickness="0"
+                            FontFamily="Segoe MDL2 Assets" FontSize="11"
+                            Width="40" Height="40" Cursor="Hand">
+                        <Button.Style>
+                            <Style TargetType="Button">
+                                <Setter Property="Background" Value="Transparent"/>
+                                <Setter Property="BorderThickness" Value="0"/>
+                                <Setter Property="Template">
+                                    <Setter.Value>
+                                        <ControlTemplate TargetType="Button">
+                                            <Border Background="{TemplateBinding Background}" Width="40" Height="40">
+                                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                            </Border>
+                                        </ControlTemplate>
+                                    </Setter.Value>
+                                </Setter>
+                                <Style.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter Property="Background" Value="#E81123"/>
+                                        <Setter Property="Foreground" Value="White"/>
+                                    </Trigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                    </Button>
+                </Grid>
+            </Border>
+
+            <!-- Content -->
+            <StackPanel Grid.Row="1" Margin="20,16,20,8">
+
+                <!-- Assembly Directory -->
+                <TextBlock Text="ASSEMBLY DIRECTORY" Style="{StaticResource DarkLabel}"/>
+                <DockPanel Margin="0,0,0,16">
+                    <Button DockPanel.Dock="Right" Content="Browse..." Click="BrowseDirectory_Click"
+                            Style="{StaticResource GhostButton}" Margin="6,0,0,0" Padding="10,5"/>
+                    <TextBox x:Name="AssemblyDirBox" Style="{StaticResource DarkInput}"
+                             ToolTip="Base path for resolving relative assembly names. Point at your app's build output folder."/>
+                </DockPanel>
+
+                <!-- Assemblies list -->
+                <TextBlock Text="ASSEMBLIES" Style="{StaticResource DarkLabel}"/>
+                <Border BorderBrush="#444" BorderThickness="1" CornerRadius="3" Margin="0,0,0,8">
+                    <ListBox x:Name="AssemblyList"
+                             Background="#252526" BorderThickness="0"
+                             Foreground="#D4D4D4" FontFamily="Consolas" FontSize="12"
+                             MinHeight="120" MaxHeight="160"
+                             ScrollViewer.VerticalScrollBarVisibility="Auto">
+                        <ListBox.ItemContainerStyle>
+                            <Style TargetType="ListBoxItem">
+                                <Setter Property="Padding" Value="0"/>
+                                <Setter Property="Background" Value="Transparent"/>
+                                <Setter Property="Template">
+                                    <Setter.Value>
+                                        <ControlTemplate TargetType="ListBoxItem">
+                                            <Border Background="{TemplateBinding Background}" Padding="2">
+                                                <ContentPresenter/>
+                                            </Border>
+                                            <ControlTemplate.Triggers>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter Property="Background" Value="#2D2D30"/>
+                                                </Trigger>
+                                            </ControlTemplate.Triggers>
+                                        </ControlTemplate>
+                                    </Setter.Value>
+                                </Setter>
+                            </Style>
+                        </ListBox.ItemContainerStyle>
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <DockPanel Margin="6,3">
+                                    <Button DockPanel.Dock="Right" Content="✕"
+                                            Style="{StaticResource IconButton}"
+                                            Click="RemoveAssembly_Click"
+                                            Tag="{Binding}"/>
+                                    <TextBlock Text="{Binding}" VerticalAlignment="Center" Foreground="#D4D4D4"/>
+                                </DockPanel>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </Border>
+
+                <Button Content="+ Add Assembly..." Click="AddAssembly_Click"
+                        Style="{StaticResource GhostButton}"
+                        HorizontalAlignment="Left" Padding="10,5"
+                        Margin="0,0,0,16"/>
+
+                <!-- Optional registrar -->
+                <TextBlock Text="REGISTRAR CLASS  (optional)" Style="{StaticResource DarkLabel}"/>
+                <TextBox x:Name="RegistrarBox" Style="{StaticResource DarkInput}"
+                         ToolTip="Fully-qualified class name, e.g. MyApp.Business.ScryberPluginRegistrar. Leave blank to use the ScryberPluginRegistrar convention."/>
+            </StackPanel>
+
+            <!-- Footer -->
+            <Border Grid.Row="2" Background="#252526" BorderBrush="#444" BorderThickness="0,1,0,0" Padding="20,12">
+                <DockPanel>
+                    <TextBlock x:Name="StatusText" Foreground="#888" FontSize="11"
+                               VerticalAlignment="Center" TextWrapping="Wrap" MaxWidth="300"/>
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                        <Button Content="Cancel" Click="Cancel_Click"
+                                Style="{StaticResource GhostButton}" Margin="0,0,8,0"/>
+                        <Button Content="Save" Click="Save_Click"
+                                Style="{StaticResource PrimaryButton}"/>
+                    </StackPanel>
+                </DockPanel>
+            </Border>
+        </Grid>
+    </Border>
+</Window>

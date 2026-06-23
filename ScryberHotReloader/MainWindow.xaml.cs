@@ -333,9 +333,11 @@ namespace ScryberHotReloader {
 
             // When services are available prefer the first class whose constructor can be satisfied.
             // Fall back to a parameterless constructor so existing models without DI keep working.
+            Type[] compiledTypes = assembly.GetTypes();
             Type? modelType = services != null
-                ? assembly.GetTypes().FirstOrDefault(t => t.IsPublic && !t.IsAbstract)
-                : assembly.GetTypes().FirstOrDefault(t => t.GetConstructor([]) != null);
+                ? compiledTypes.FirstOrDefault(t => t.IsPublic && !t.IsAbstract && t.Name == "Model")
+                  ?? compiledTypes.FirstOrDefault(t => t.IsPublic && !t.IsAbstract)
+                : compiledTypes.FirstOrDefault(t => t.GetConstructor([]) != null);
 
             if (modelType == null) {
                 MessageBox.Show("No suitable public class was found in the model.", "Compile Error");
@@ -388,6 +390,25 @@ namespace ScryberHotReloader {
             }
         }
 
+        private void ManagePlugins_Click(object sender, RoutedEventArgs e) {
+            string dir = !string.IsNullOrEmpty(_currentFilePath)
+                ? System.IO.Path.GetDirectoryName(_currentFilePath)!
+                : Directory.GetCurrentDirectory();
+
+            string configPath = System.IO.Path.Combine(dir, "scryber-plugins.json");
+
+            var dialog = new PluginManagerWindow(configPath) { Owner = this };
+            dialog.ShowDialog();
+
+            if (dialog.Saved) {
+                var (provider, warnings) = PluginLoader.Load(_currentFilePath);
+                _serviceProvider = provider;
+
+                if (warnings.Length > 0)
+                    MessageBox.Show(string.Join("\n\n", warnings), "Plugin Warnings", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
+
         private void ReloadPlugins_Click(object sender, RoutedEventArgs e) {
             var (provider, warnings) = PluginLoader.Load(_currentFilePath);
             _serviceProvider = provider;
@@ -398,29 +419,7 @@ namespace ScryberHotReloader {
                 provider != null ? MessageBoxImage.Information : MessageBoxImage.Warning);
         }
 
-        private void OpenPluginsConfig_Click(object sender, RoutedEventArgs e) {
-            string dir = !string.IsNullOrEmpty(_currentFilePath)
-                ? System.IO.Path.GetDirectoryName(_currentFilePath)!
-                : Directory.GetCurrentDirectory();
-
-            string configPath = System.IO.Path.Combine(dir, "scryber-plugins.json");
-
-            if (!File.Exists(configPath)) {
-                File.WriteAllText(configPath, """
-                    {
-                      "assemblyDirectory": "C:\\path\\to\\your\\app\\bin\\Debug\\net9.0",
-                      "assemblies": [
-                        "MyApp.Interfaces.dll",
-                        "MyApp.Business.dll"
-                      ]
-                    }
-                    """, Encoding.UTF8);
-            }
-
-            Process.Start(new ProcessStartInfo { FileName = configPath, UseShellExecute = true });
-        }
-
-        private ICSharpCode.AvalonEdit.TextEditor ActiveEditor =>
+private ICSharpCode.AvalonEdit.TextEditor ActiveEditor =>
             EditorTabs.SelectedIndex == 0 ? HtmlEditor : ModelEditor;
 
         private void EditorTabs_SelectionChanged(object sender, SelectionChangedEventArgs e) {
