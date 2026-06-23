@@ -18,23 +18,25 @@ internal static class PluginLoader {
 
     private static Assembly? OnAssemblyResolve(object? _, ResolveEventArgs args) {
         if (_resolverBaseDir == null) return null;
-        var name = new AssemblyName(args.Name);
+        var requested = new AssemblyName(args.Name);
 
-        // Return the already-loaded copy to avoid double-load conflicts (e.g. DI.Abstractions
-        // already loaded from our NuGet cache, also present in the user's bin folder).
-        var existing = AppDomain.CurrentDomain.GetAssemblies()
-            .FirstOrDefault(a => a.GetName().Name == name.Name);
-        if (existing != null) return existing;
+        // Return exact match (name + version) already in the AppDomain.
+        // Do NOT return a different version — the CLR validates the manifest and throws
+        // 0x80131040 if the version in the returned assembly doesn't match what was requested.
+        var exact = AppDomain.CurrentDomain.GetAssemblies().FirstOrDefault(a => {
+            var n = a.GetName();
+            return string.Equals(n.Name, requested.Name, StringComparison.OrdinalIgnoreCase)
+                && (requested.Version == null || n.Version == requested.Version);
+        });
+        if (exact != null) return exact;
 
-        string dllName = name.Name + ".dll";
+        string dllName = requested.Name + ".dll";
 
-        // 1. User's build output folder.
+        // 1. User's build output folder — may contain the exact version needed (e.g. DI v10).
         string candidate = Path.Combine(_resolverBaseDir, dllName);
         if (File.Exists(candidate)) return Assembly.LoadFrom(candidate);
 
-        // 2. .NET shared framework directories (AspNetCore.App, WindowsDesktop.App, etc.)
-        // Needed when the user's app is framework-dependent and assemblies like
-        // Microsoft.Extensions.Hosting.Abstractions live in the shared runtime, not bin.
+        // 2. .NET shared framework directories (same major.minor as current runtime only).
         foreach (string dir in SharedFrameworkDirs()) {
             candidate = Path.Combine(dir, dllName);
             if (File.Exists(candidate)) return Assembly.LoadFrom(candidate);
