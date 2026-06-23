@@ -15,6 +15,7 @@ internal static class PluginLoader {
     private static string? _resolverBaseDir;
     private static bool _resolverRegistered;
     private static string[]? _sharedFrameworkDirs;
+    private static string[]? _allFrameworkDirs;
 
     private static Assembly? OnAssemblyResolve(object? _, ResolveEventArgs args) {
         if (_resolverBaseDir == null) return null;
@@ -22,7 +23,7 @@ internal static class PluginLoader {
 
         // Return exact match (name + version) already in the AppDomain.
         // Do NOT return a different version — the CLR validates the manifest and throws
-        // 0x80131040 if the version in the returned assembly doesn't match what was requested.
+        // 0x80131040 if the returned assembly's version doesn't match what was requested.
         var exact = AppDomain.CurrentDomain.GetAssemblies().FirstOrDefault(a => {
             var n = a.GetName();
             return string.Equals(n.Name, requested.Name, StringComparison.OrdinalIgnoreCase)
@@ -32,14 +33,22 @@ internal static class PluginLoader {
 
         string dllName = requested.Name + ".dll";
 
-        // 1. User's build output folder — may contain the exact version needed (e.g. DI v10).
+        // 1. User's build output folder.
         string candidate = Path.Combine(_resolverBaseDir, dllName);
         if (File.Exists(candidate)) return Assembly.LoadFrom(candidate);
 
-        // 2. .NET shared framework directories (same major.minor as current runtime only).
-        foreach (string dir in SharedFrameworkDirs()) {
+        // 2. Search ALL installed framework versions for the exact requested version.
+        //    This is broader than SharedFrameworkDirs (which is current-version-only for Roslyn)
+        //    so we can find e.g. DI.Abstractions v10 in the .NET 10 shared framework even when
+        //    the hot reloader itself runs on .NET 9.
+        foreach (string dir in AllFrameworkDirs()) {
             candidate = Path.Combine(dir, dllName);
-            if (File.Exists(candidate)) return Assembly.LoadFrom(candidate);
+            if (!File.Exists(candidate)) continue;
+            try {
+                if (requested.Version == null ||
+                    AssemblyName.GetAssemblyName(candidate).Version == requested.Version)
+                    return Assembly.LoadFrom(candidate);
+            } catch { }
         }
 
         return null;
@@ -56,6 +65,30 @@ internal static class PluginLoader {
         return [.. dirs];
     }
 
+    // All versions of every shared framework — used by the runtime resolver so it can find
+    // an exact version (e.g. DI.Abstractions v10 in .NET 10) even when the hot reloader
+    // is running on a different runtime version.
+    private static string[] AllFrameworkDirs() {
+        if (_allFrameworkDirs != null) return _allFrameworkDirs;
+        var dirs = new List<string>();
+        try {
+            string? sharedDir = Path.GetDirectoryName(
+                                Path.GetDirectoryName(
+                                Path.GetDirectoryName(typeof(object).Assembly.Location)));
+            if (sharedDir != null && Directory.Exists(sharedDir)) {
+                foreach (string fw in Directory.GetDirectories(sharedDir)) {
+                    foreach (string ver in Directory.GetDirectories(fw)
+                        .OrderByDescending(d => { Version.TryParse(Path.GetFileName(d), out var v); return v ?? new Version(0, 0); }))
+                        dirs.Add(ver);
+                }
+            }
+        } catch { }
+        _allFrameworkDirs = [.. dirs];
+        return _allFrameworkDirs;
+    }
+
+    // Current-runtime-version-only framework dirs — used for Roslyn metadata references
+    // to prevent CS0433/CS0518 from conflicting assembly versions.
     private static string[] SharedFrameworkDirs() {
         if (_sharedFrameworkDirs != null) return _sharedFrameworkDirs;
 
