@@ -4,6 +4,7 @@
         xmlns:avalonedit="http://icsharpcode.net/sharpdevelop/avalonedit"
         xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
         xmlns:wc="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
+        xmlns:sys="clr-namespace:System;assembly=System.Runtime"
         Title="Scryber Hot Reloader" Height="700" Width="1200"
         Background="#1e1e1e"
         FontFamily="Segoe UI"
@@ -185,6 +186,55 @@
             </Style.Triggers>
         </Style>
 
+        <!-- HTTP Methods for the HTTP tab combo column -->
+        <x:Array x:Key="HttpMethods" Type="{x:Type sys:String}">
+            <sys:String>GET</sys:String>
+            <sys:String>POST</sys:String>
+            <sys:String>PUT</sys:String>
+            <sys:String>DELETE</sys:String>
+            <sys:String>PATCH</sys:String>
+            <sys:String>HEAD</sys:String>
+        </x:Array>
+
+        <!-- DataGrid dark theme -->
+        <Style TargetType="DataGridColumnHeader">
+            <Setter Property="Background" Value="#2D2D30"/>
+            <Setter Property="Foreground" Value="#D4D4D4"/>
+            <Setter Property="BorderBrush" Value="#444"/>
+            <Setter Property="BorderThickness" Value="0,0,1,1"/>
+            <Setter Property="Padding" Value="6,4"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="FontWeight" Value="Normal"/>
+            <Setter Property="HorizontalContentAlignment" Value="Left"/>
+            <Setter Property="SeparatorBrush" Value="#444"/>
+        </Style>
+
+        <Style TargetType="DataGridRow">
+            <Setter Property="Background" Value="#252526"/>
+            <Setter Property="Foreground" Value="#D4D4D4"/>
+            <Style.Triggers>
+                <Trigger Property="IsSelected" Value="True">
+                    <Setter Property="Background" Value="#094771"/>
+                </Trigger>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#2D2D30"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style TargetType="DataGridCell">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="#D4D4D4"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Style.Triggers>
+                <Trigger Property="IsSelected" Value="True">
+                    <Setter Property="Background" Value="Transparent"/>
+                    <Setter Property="BorderBrush" Value="Transparent"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
     </Window.Resources>
 
     <!-- Layout -->
@@ -255,74 +305,179 @@
 
             <!-- Editor Tabs -->
             <Grid Grid.Column="0">
-            <TabControl x:Name="EditorTabs" Background="#1e1e1e" BorderThickness="1" BorderBrush="#444" SelectionChanged="EditorTabs_SelectionChanged">
-                <TabItem Header="HTML">
-                    <avalonedit:TextEditor Name="HtmlEditor"
+                <TabControl x:Name="EditorTabs" Background="#1e1e1e" BorderThickness="1" BorderBrush="#444" SelectionChanged="EditorTabs_SelectionChanged">
+                    <TabItem Header="HTML">
+                        <avalonedit:TextEditor Name="HtmlEditor"
                                            Background="#1e1e1e" Foreground="#d4d4d4"
                                            FontFamily="Consolas" FontSize="14"
                                            ShowLineNumbers="True" Padding="10"
                                            BorderBrush="#444" BorderThickness="1"
                                            HorizontalScrollBarVisibility="Auto"
                                            VerticalScrollBarVisibility="Auto"/>
-                </TabItem>
+                    </TabItem>
 
-                <TabItem Header="Model">
-                    <avalonedit:TextEditor Name="ModelEditor"
+                    <TabItem Header="Model">
+                        <avalonedit:TextEditor Name="ModelEditor"
                                            Background="#1e1e1e" Foreground="#d4d4d4"
                                            FontFamily="Consolas" FontSize="14"
                                            ShowLineNumbers="True" Padding="10"
                                            BorderBrush="#444" BorderThickness="1"
                                            HorizontalScrollBarVisibility="Auto"
                                            VerticalScrollBarVisibility="Auto"/>
-                </TabItem>
+                    </TabItem>
 
-                <TabItem Header="Startup">
-                    <avalonedit:TextEditor Name="StartupEditor"
+                    <TabItem Header="Startup">
+                        <avalonedit:TextEditor Name="StartupEditor"
                                            Background="#1e1e1e" Foreground="#d4d4d4"
                                            FontFamily="Consolas" FontSize="14"
                                            ShowLineNumbers="True" Padding="10"
                                            BorderBrush="#444" BorderThickness="1"
                                            HorizontalScrollBarVisibility="Auto"
                                            VerticalScrollBarVisibility="Auto"/>
-                </TabItem>
-            </TabControl>
+                    </TabItem>
 
-            <!-- Find/Replace overlay panel -->
-            <Border x:Name="FindReplacePanel"
+                    <TabItem Header="HTTP">
+                        <Grid Background="#1e1e1e" Margin="6">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*" MinHeight="80"/>
+                                <RowDefinition Height="160"/>
+                                <RowDefinition Height="90"/>
+                            </Grid.RowDefinitions>
+
+                            <!-- Toolbar -->
+                            <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,6">
+                                <Button Content="+ Add" Click="HttpAdd_Click" Style="{StaticResource FindPanelButton}" Padding="10,4"/>
+                                <Button Content="– Remove" Click="HttpRemove_Click" Style="{StaticResource FindPanelButton}" Padding="10,4" Margin="4,0,0,0"/>
+                                <Button Content="▶ Test Selected" Click="HttpTest_Click" Style="{StaticResource FindPanelButton}" Padding="10,4" Margin="4,0,0,0"/>
+                                <TextBlock x:Name="HttpStatusText" Foreground="#888" VerticalAlignment="Center" Margin="12,0,0,0" FontSize="12"/>
+                            </StackPanel>
+
+                            <!-- Request list -->
+                            <DataGrid x:Name="HttpRequestGrid" Grid.Row="1"
+                                  AutoGenerateColumns="False"
+                                  CanUserAddRows="False"
+                                  CanUserDeleteRows="False"
+                                  SelectionMode="Single"
+                                  SelectionChanged="HttpRequestGrid_SelectionChanged"
+                                  Background="#1e1e1e"
+                                  BorderBrush="#444" BorderThickness="1"
+                                  GridLinesVisibility="Horizontal"
+                                  HorizontalGridLinesBrush="#444"
+                                  ColumnHeaderHeight="28">
+                                <DataGrid.Columns>
+                                    <DataGridCheckBoxColumn Header="On"
+                                                        Binding="{Binding Enabled, UpdateSourceTrigger=PropertyChanged}"
+                                                        Width="40"/>
+                                    <DataGridTextColumn Header="Name"
+                                                    Binding="{Binding Name, UpdateSourceTrigger=LostFocus}"
+                                                    Width="130">
+                                        <DataGridTextColumn.ElementStyle>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Foreground" Value="#D4D4D4"/>
+                                                <Setter Property="Padding" Value="4,2"/>
+                                            </Style>
+                                        </DataGridTextColumn.ElementStyle>
+                                    </DataGridTextColumn>
+                                    <DataGridComboBoxColumn Header="Method"
+                                                        SelectedItemBinding="{Binding Method, UpdateSourceTrigger=PropertyChanged}"
+                                                        ItemsSource="{StaticResource HttpMethods}"
+                                                        Width="90"/>
+                                    <DataGridTextColumn Header="URL"
+                                                    Binding="{Binding Url, UpdateSourceTrigger=LostFocus}"
+                                                    Width="*">
+                                        <DataGridTextColumn.ElementStyle>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Foreground" Value="#9CDCFE"/>
+                                                <Setter Property="Padding" Value="4,2"/>
+                                            </Style>
+                                        </DataGridTextColumn.ElementStyle>
+                                    </DataGridTextColumn>
+                                </DataGrid.Columns>
+                            </DataGrid>
+
+                            <!-- Detail: Headers + Body for selected request -->
+                            <Grid Grid.Row="2" Margin="0,6,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="8"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+
+                                <DockPanel Grid.Column="0">
+                                    <TextBlock DockPanel.Dock="Top" Text="Headers (JSON object)" Foreground="#888" FontSize="11" Margin="0,0,0,3"/>
+                                    <TextBox x:Name="HttpHeadersBox"
+                                         Background="#252526" Foreground="#D4D4D4" CaretBrush="#AEAFAD"
+                                         BorderBrush="#444" BorderThickness="1"
+                                         FontFamily="Consolas" FontSize="12"
+                                         AcceptsReturn="True" VerticalScrollBarVisibility="Auto"
+                                         Padding="5" LostFocus="HttpHeadersBox_LostFocus"/>
+                                </DockPanel>
+
+                                <GridSplitter Grid.Column="1" Width="8" HorizontalAlignment="Stretch" Background="#444" VerticalAlignment="Stretch"/>
+
+                                <DockPanel Grid.Column="2">
+                                    <TextBlock DockPanel.Dock="Top" Text="Body" Foreground="#888" FontSize="11" Margin="0,0,0,3"/>
+                                    <TextBox x:Name="HttpBodyBox"
+                                         Background="#252526" Foreground="#D4D4D4" CaretBrush="#AEAFAD"
+                                         BorderBrush="#444" BorderThickness="1"
+                                         FontFamily="Consolas" FontSize="12"
+                                         AcceptsReturn="True" VerticalScrollBarVisibility="Auto"
+                                         Padding="5" LostFocus="HttpBodyBox_LostFocus"/>
+                                </DockPanel>
+                            </Grid>
+
+                            <!-- Last response preview -->
+                            <DockPanel Grid.Row="3" Margin="0,4,0,0">
+                                <TextBlock DockPanel.Dock="Top" Text="Last Response" Foreground="#888" FontSize="11" Margin="0,0,0,3"/>
+                                <TextBox x:Name="HttpResponseBox"
+                                     Background="#1A1A1A" Foreground="#9CDCFE" CaretBrush="#AEAFAD"
+                                     BorderBrush="#444" BorderThickness="1"
+                                     FontFamily="Consolas" FontSize="12"
+                                     IsReadOnly="True" TextWrapping="Wrap"
+                                     VerticalScrollBarVisibility="Auto"
+                                     Padding="5"/>
+                            </DockPanel>
+                        </Grid>
+                    </TabItem>
+                </TabControl>
+
+                <!-- Find/Replace overlay panel -->
+                <Border x:Name="FindReplacePanel"
                     Visibility="Collapsed"
                     VerticalAlignment="Top" HorizontalAlignment="Right"
                     Background="#2D2D30" BorderBrush="#555" BorderThickness="1"
                     CornerRadius="4" Padding="10,8" Margin="0,30,4,0"
                     Panel.ZIndex="10">
-                <StackPanel>
-                    <!-- Find Row -->
-                    <DockPanel LastChildFill="True">
-                        <Button DockPanel.Dock="Right" Content="✕" Click="CloseFind_Click"
+                    <StackPanel>
+                        <!-- Find Row -->
+                        <DockPanel LastChildFill="True">
+                            <Button DockPanel.Dock="Right" Content="✕" Click="CloseFind_Click"
                                 Style="{StaticResource FindPanelButton}" Width="22" Height="22" Margin="2,0,0,0" ToolTip="Close (Esc)"/>
-                        <Button DockPanel.Dock="Right" Content="▼" Click="FindNext_Click"
+                            <Button DockPanel.Dock="Right" Content="▼" Click="FindNext_Click"
                                 Style="{StaticResource FindPanelButton}" Width="22" Height="22" Margin="2,0,0,0" ToolTip="Next match (Enter)"/>
-                        <Button DockPanel.Dock="Right" Content="▲" Click="FindPrev_Click"
+                            <Button DockPanel.Dock="Right" Content="▲" Click="FindPrev_Click"
                                 Style="{StaticResource FindPanelButton}" Width="22" Height="22" Margin="2,0,0,0" ToolTip="Previous match (Shift+Enter)"/>
-                        <TextBlock x:Name="MatchCountText" DockPanel.Dock="Right"
+                            <TextBlock x:Name="MatchCountText" DockPanel.Dock="Right"
                                    Foreground="#888" VerticalAlignment="Center"
                                    FontSize="11" MinWidth="52" TextAlignment="Right" Margin="6,0,2,0"/>
-                        <TextBox x:Name="FindBox" MinWidth="200"
+                            <TextBox x:Name="FindBox" MinWidth="200"
                                  Style="{StaticResource FindTextBoxStyle}"
                                  KeyDown="FindBox_KeyDown" TextChanged="FindBox_TextChanged"/>
-                    </DockPanel>
+                        </DockPanel>
 
-                    <!-- Replace Row (hidden when using Find only) -->
-                    <DockPanel x:Name="ReplaceRow" Visibility="Collapsed" Margin="0,6,0,0" LastChildFill="True">
-                        <Button DockPanel.Dock="Right" Content="All" Click="ReplaceAll_Click"
+                        <!-- Replace Row (hidden when using Find only) -->
+                        <DockPanel x:Name="ReplaceRow" Visibility="Collapsed" Margin="0,6,0,0" LastChildFill="True">
+                            <Button DockPanel.Dock="Right" Content="All" Click="ReplaceAll_Click"
                                 Style="{StaticResource FindPanelButton}" Padding="8,3" Margin="2,0,0,0" ToolTip="Replace all"/>
-                        <Button DockPanel.Dock="Right" Content="Replace" Click="ReplaceOne_Click"
+                            <Button DockPanel.Dock="Right" Content="Replace" Click="ReplaceOne_Click"
                                 Style="{StaticResource FindPanelButton}" Padding="8,3" Margin="2,0,0,0" ToolTip="Replace current (Enter)"/>
-                        <TextBox x:Name="ReplaceBox" MinWidth="200"
+                            <TextBox x:Name="ReplaceBox" MinWidth="200"
                                  Style="{StaticResource FindTextBoxStyle}"
                                  KeyDown="ReplaceBox_KeyDown"/>
-                    </DockPanel>
-                </StackPanel>
-            </Border>
+                        </DockPanel>
+                    </StackPanel>
+                </Border>
             </Grid>
 
             <!-- Splitter -->

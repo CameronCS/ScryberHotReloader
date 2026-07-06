@@ -19,7 +19,8 @@ internal static class PluginLoader {
     private static string[]? _allFrameworkDirs;
 
     private static Assembly? OnAssemblyResolve(object? _, ResolveEventArgs args) {
-        if (_resolverBaseDir == null) return null;
+        if (_resolverBaseDir == null)
+            return null;
         var requested = new AssemblyName(args.Name);
 
         // Return exact match (name + version) already in the AppDomain.
@@ -30,27 +31,28 @@ internal static class PluginLoader {
             return string.Equals(n.Name, requested.Name, StringComparison.OrdinalIgnoreCase)
                 && (requested.Version == null || n.Version == requested.Version);
         });
-        if (exact != null) return exact;
+        if (exact != null)
+            return exact;
 
         string dllName = requested.Name + ".dll";
 
-        // 1. User's build output folder — only return it if the version matches what was requested.
+        // 1. User's build output folder — load whatever version is there.
+        //    The user controls this directory, and .NET Core's AssemblyResolve
+        //    result is not subject to strict manifest-version validation.
         string candidate = Path.Combine(_resolverBaseDir, dllName);
         if (File.Exists(candidate)) {
             try {
-                if (requested.Version == null ||
-                    AssemblyName.GetAssemblyName(candidate).Version == requested.Version)
-                    return AssemblyLoadContext.Default.LoadFromAssemblyPath(candidate);
+                return AssemblyLoadContext.Default.LoadFromAssemblyPath(candidate);
             } catch { }
         }
 
         // 2. Search ALL installed framework versions for the exact requested version.
-        //    This is broader than SharedFrameworkDirs (which is current-version-only for Roslyn)
-        //    so we can find e.g. DI.Abstractions v10 in the .NET 10 shared framework even when
-        //    the hot reloader itself runs on .NET 9.
+        //    Keep strict matching here so we never return a mismatched framework assembly
+        //    (e.g. avoid returning DI.Abstractions v9 when v10 was requested from .NET 10).
         foreach (string dir in AllFrameworkDirs()) {
             candidate = Path.Combine(dir, dllName);
-            if (!File.Exists(candidate)) continue;
+            if (!File.Exists(candidate))
+                continue;
             try {
                 if (requested.Version == null ||
                     AssemblyName.GetAssemblyName(candidate).Version == requested.Version)
@@ -67,7 +69,8 @@ internal static class PluginLoader {
     /// </summary>
     public static string[] GetProbeDirectories() {
         var dirs = new List<string>();
-        if (_resolverBaseDir != null) dirs.Add(_resolverBaseDir);
+        if (_resolverBaseDir != null)
+            dirs.Add(_resolverBaseDir);
         dirs.AddRange(SharedFrameworkDirs());
         return [.. dirs];
     }
@@ -76,7 +79,8 @@ internal static class PluginLoader {
     // an exact version (e.g. DI.Abstractions v10 in .NET 10) even when the hot reloader
     // is running on a different runtime version.
     private static string[] AllFrameworkDirs() {
-        if (_allFrameworkDirs != null) return _allFrameworkDirs;
+        if (_allFrameworkDirs != null)
+            return _allFrameworkDirs;
         var dirs = new List<string>();
         try {
             string? sharedDir = Path.GetDirectoryName(
@@ -97,15 +101,16 @@ internal static class PluginLoader {
     // Current-runtime-version-only framework dirs — used for Roslyn metadata references
     // to prevent CS0433/CS0518 from conflicting assembly versions.
     private static string[] SharedFrameworkDirs() {
-        if (_sharedFrameworkDirs != null) return _sharedFrameworkDirs;
+        if (_sharedFrameworkDirs != null)
+            return _sharedFrameworkDirs;
 
         var dirs = new List<string>();
         try {
             // typeof(object) lives in dotnet/shared/Microsoft.NETCore.App/{version}/
             // Two levels up is the 'shared' folder that also contains AspNetCore.App etc.
             string? currentVersionDir = Path.GetDirectoryName(typeof(object).Assembly.Location);
-            string? frameworkDir      = Path.GetDirectoryName(currentVersionDir);
-            string? sharedDir         = Path.GetDirectoryName(frameworkDir);
+            string? frameworkDir = Path.GetDirectoryName(currentVersionDir);
+            string? sharedDir = Path.GetDirectoryName(frameworkDir);
 
             // Only include framework dirs that match our runtime's major.minor — this prevents
             // adding .NET 10 assemblies (DI.Abstractions v10 etc.) when we're running on .NET 9,
@@ -122,7 +127,8 @@ internal static class PluginLoader {
                             return v ?? new Version(0, 0);
                         })
                         .FirstOrDefault();
-                    if (match != null) dirs.Add(match);
+                    if (match != null)
+                        dirs.Add(match);
                 }
             }
         } catch { /* non-critical — resolver just returns null */ }
@@ -140,13 +146,16 @@ internal static class PluginLoader {
         var warnings = new List<string>();
 
         string? configPath = FindConfig(htmlFilePath);
-        if (configPath == null) return ([], [], null, []);
+        if (configPath == null)
+            return ([], [], null, []);
 
         PluginConfig? config = ReadConfig(configPath, warnings);
-        if (config == null) return ([], [], null, [.. warnings]);
+        if (config == null)
+            return ([], [], null, [.. warnings]);
 
         string? appSettingsPath = config.AppSettingsPath;
-        if (config.Assemblies.Count == 0) return ([], [], appSettingsPath, [.. warnings]);
+        if (config.Assemblies.Count == 0)
+            return ([], [], appSettingsPath, [.. warnings]);
 
         var (assemblies, paths) = LoadAssemblies(config, configPath, warnings);
         return (assemblies, [.. paths], appSettingsPath, [.. warnings]);
@@ -157,9 +166,10 @@ internal static class PluginLoader {
     /// Use as a fallback when the Startup tab is empty.
     /// </summary>
     public static (IServiceProvider? Provider, string[] Warnings) BuildFromRegistrar(
-            List<Assembly> assemblies, string? explicitRegistrar = null) {
+            List<Assembly> assemblies, string? explicitRegistrar = null, HttpResults? httpResults = null) {
         var warnings = new List<string>();
-        if (assemblies.Count == 0) return (null, []);
+        if (assemblies.Count == 0)
+            return (null, []);
 
         IServiceCollection services = new ServiceCollection();
         bool registered = InvokeRegistrar(assemblies, services, explicitRegistrar, warnings);
@@ -168,7 +178,13 @@ internal static class PluginLoader {
             warnings.Add($"No '{RegistrarClassName}', 'Program', or 'Startup' class with a " +
                          $"'{ConfigureServicesMethod}(IServiceCollection)' method was found.");
 
-        return registered ? (services.BuildServiceProvider(), [.. warnings]) : (null, [.. warnings]);
+        if (!registered)
+            return (null, [.. warnings]);
+
+        if (httpResults != null)
+            services.AddSingleton(httpResults);
+
+        return (services.BuildServiceProvider(), [.. warnings]);
     }
 
     /// <summary>
@@ -177,7 +193,8 @@ internal static class PluginLoader {
     /// </summary>
     public static (IServiceProvider? Provider, string[] Warnings) Load(string? htmlFilePath) {
         var (assemblies, _, _, asmWarnings) = LoadAssembliesOnly(htmlFilePath);
-        if (assemblies.Count == 0) return (null, asmWarnings);
+        if (assemblies.Count == 0)
+            return (null, asmWarnings);
 
         var (provider, regWarnings) = BuildFromRegistrar(assemblies);
         return (provider, [.. asmWarnings, .. regWarnings]);
@@ -189,7 +206,8 @@ internal static class PluginLoader {
         if (!string.IsNullOrEmpty(htmlFilePath)) {
             string dir = Path.GetDirectoryName(htmlFilePath) ?? "";
             string candidate = Path.Combine(dir, ConfigFileName);
-            if (File.Exists(candidate)) return candidate;
+            if (File.Exists(candidate))
+                return candidate;
         }
 
         string cwdCandidate = Path.Combine(Directory.GetCurrentDirectory(), ConfigFileName);
@@ -222,8 +240,14 @@ internal static class PluginLoader {
             _resolverRegistered = true;
         }
 
+        // Microsoft.Data.SqlClient 5.x defaults to the native SNI networking stack.
+        // The native DLL is only on the OS search path when the app ships it — when
+        // loaded from a plugin directory it can't be found, causing "not supported on
+        // this platform". Switching to the managed stack avoids that entirely.
+        AppContext.SetSwitch("Microsoft.Data.SqlClient.UseManagedNetworkingOnWindows", true);
+
         var loaded = new List<Assembly>();
-        var paths  = new List<string>();
+        var paths = new List<string>();
 
         foreach (string entry in config.Assemblies) {
             string fullPath = Path.IsPathRooted(entry) ? entry : Path.Combine(baseDir, entry);
@@ -262,19 +286,31 @@ internal static class PluginLoader {
 
             foreach (string name in candidateNames) {
                 foreach (Assembly assembly in assemblies) {
-                    Type? registrar = assembly.GetTypes()
-                        .FirstOrDefault(t => t.Name == name);
+                    // GetTypes() throws ReflectionTypeLoadException when a transitive dependency
+                    // DLL is missing (e.g. a mismatched Microsoft.IdentityModel.Tokens version).
+                    // Fall back to the partial type list so the scan still works.
+                    Type[] types;
+                    try {
+                        types = assembly.GetTypes();
+                    } catch (ReflectionTypeLoadException ex) {
+                        types = ex.Types.Where(t => t != null).ToArray()!;
+                    }
 
-                    if (registrar == null) continue;
+                    Type? registrar = types.FirstOrDefault(t => t.Name == name);
+                    if (registrar == null)
+                        continue;
 
                     method = registrar.GetMethod(ConfigureServicesMethod, [typeof(IServiceCollection)]);
-                    if (method != null) break;
+                    if (method != null)
+                        break;
                 }
-                if (method != null) break;
+                if (method != null)
+                    break;
             }
         }
 
-        if (method == null) return false;
+        if (method == null)
+            return false;
 
         try {
             method.Invoke(null, [services]);
