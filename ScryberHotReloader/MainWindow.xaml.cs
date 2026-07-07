@@ -541,7 +541,24 @@ namespace ScryberHotReloader {
             ms.Seek(0, SeekOrigin.Begin);
             var assembly = Assembly.Load(ms.ToArray());
 
-            var runnerTypes = assembly.GetTypes()
+            // GetTypes() throws ReflectionTypeLoadException when a referenced assembly can't be
+            // resolved in this process (e.g. a plugin type built for a newer .NET major version
+            // than the hot reloader itself). Fall back to the partial type list, same as
+            // PluginLoader, so a compile-time reference gap surfaces as a clear error instead of
+            // an unhandled exception.
+            Type[] compiledTypes;
+            try {
+                compiledTypes = assembly.GetTypes();
+            } catch (ReflectionTypeLoadException ex) {
+                compiledTypes = ex.Types.Where(t => t != null).ToArray()!;
+                string loaderErrors = string.Join("\n", ex.LoaderExceptions.Select(le => le?.Message).Distinct());
+                ClipboardMessageBox.Show(
+                    $"Some types in the Model tab could not be fully loaded — this usually means a " +
+                    $"referenced plugin assembly targets a different .NET version than the hot reloader.\n\n{loaderErrors}",
+                    "Model Warning", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+
+            var runnerTypes = compiledTypes
                 .Where(t => typeof(IScryberRunner).IsAssignableFrom(t) && !t.IsInterface && !t.IsAbstract)
                 .ToList();
 

@@ -164,27 +164,37 @@ internal static class PluginLoader {
     /// <summary>
     /// Builds an IServiceProvider by calling the convention registrar on already-loaded assemblies.
     /// Use as a fallback when the Startup tab is empty.
+    ///
+    /// Tries two conventions, in order:
+    /// 1. A 'ConfigureServices(IServiceCollection)' method (see <see cref="InvokeRegistrar"/>).
+    /// 2. A method that builds and returns a host builder (e.g. 'WebApplicationBuilder') — the
+    ///    shape most real ASP.NET Core apps actually use (see <see cref="BuildFromWebHostFactory"/>).
     /// </summary>
     public static (IServiceProvider? Provider, string[] Warnings) BuildFromRegistrar(
             List<Assembly> assemblies, string? explicitRegistrar = null, HttpResults? httpResults = null) {
-        var warnings = new List<string>();
         if (assemblies.Count == 0)
             return (null, []);
 
+        var configureWarnings = new List<string>();
         IServiceCollection services = new ServiceCollection();
-        bool registered = InvokeRegistrar(assemblies, services, explicitRegistrar, warnings);
+        bool registered = InvokeRegistrar(assemblies, services, explicitRegistrar, configureWarnings);
 
-        if (!registered)
-            warnings.Add($"No '{RegistrarClassName}', 'Program', or 'Startup' class with a " +
-                         $"'{ConfigureServicesMethod}(IServiceCollection)' method was found.");
+        if (registered) {
+            if (httpResults != null)
+                services.AddSingleton(httpResults);
+            return (services.BuildServiceProvider(), [.. configureWarnings]);
+        }
 
-        if (!registered)
-            return (null, [.. warnings]);
+        var (hostProvider, hostWarnings) = BuildFromWebHostFactory(assemblies, explicitRegistrar, httpResults);
+        if (hostProvider != null)
+            return (hostProvider, [.. hostWarnings]);
 
-        if (httpResults != null)
-            services.AddSingleton(httpResults);
-
-        return (services.BuildServiceProvider(), [.. warnings]);
+        var warnings = new List<string>(configureWarnings);
+        warnings.AddRange(hostWarnings);
+        warnings.Add($"No '{RegistrarClassName}', 'Program', or 'Startup' class with a " +
+                     $"'{ConfigureServicesMethod}(IServiceCollection)' method or a builder-returning " +
+                     "factory method (e.g. one returning 'WebApplicationBuilder') was found.");
+        return (null, [.. warnings]);
     }
 
     /// <summary>
@@ -262,62 +272,183 @@ internal static class PluginLoader {
         return (loaded, paths);
     }
 
+    // Public or non-public, static or instance — real-world registrars are often
+    // `private static` on an `internal partial class Program`, which the default
+    // BindingFlags (public static/instance only) would silently miss.
+    private const BindingFlags RegistrarMethodFlags =
+        BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance;
+
     private static bool InvokeRegistrar(List<Assembly> assemblies, IServiceCollection services, string? explicitRegistrar, List<string> warnings) {
-        MethodInfo? method = null;
+        if (!string.IsNullOrEmpty(explicitRegistrar) && !FindCandidateTypes(assemblies, explicitRegistrar).Any()) {
+            warnings.Add($"Registrar type '{explicitRegistrar}' was not found in any loaded assembly.");
+            return false;
+        }
 
-        if (!string.IsNullOrEmpty(explicitRegistrar)) {
-            // Explicit fully-qualified class name e.g. "MyApp.Business.ScryberPluginRegistrar"
-            Type? type = assemblies
-                .Select(a => a.GetType(explicitRegistrar))
-                .FirstOrDefault(t => t != null);
-
-            if (type == null) {
-                warnings.Add($"Registrar type '{explicitRegistrar}' was not found in any loaded assembly.");
-                return false;
+        var nearMisses = new List<string>();
+        foreach (Type candidate in FindCandidateTypes(assemblies, explicitRegistrar)) {
+            MethodInfo? method = candidate.GetMethod(ConfigureServicesMethod, RegistrarMethodFlags, [typeof(IServiceCollection)]);
+            if (method == null) {
+                nearMisses.AddRange(FindNearMisses(candidate));
+                continue;
             }
 
-            method = type.GetMethod(ConfigureServicesMethod, [typeof(IServiceCollection)]);
-        } else {
-            // Convention priority:
-            // 1. ScryberPluginRegistrar   — explicit hot-reloader opt-in
-            // 2. Program                  — partial class Program pattern (native, zero new files)
-            // 3. Startup                  — classic ASP.NET Core Startup.cs pattern
-            string[] candidateNames = [RegistrarClassName, "Program", "Startup"];
-
-            foreach (string name in candidateNames) {
-                foreach (Assembly assembly in assemblies) {
-                    // GetTypes() throws ReflectionTypeLoadException when a transitive dependency
-                    // DLL is missing (e.g. a mismatched Microsoft.IdentityModel.Tokens version).
-                    // Fall back to the partial type list so the scan still works.
-                    Type[] types;
-                    try {
-                        types = assembly.GetTypes();
-                    } catch (ReflectionTypeLoadException ex) {
-                        types = ex.Types.Where(t => t != null).ToArray()!;
-                    }
-
-                    Type? registrar = types.FirstOrDefault(t => t.Name == name);
-                    if (registrar == null)
-                        continue;
-
-                    method = registrar.GetMethod(ConfigureServicesMethod, [typeof(IServiceCollection)]);
-                    if (method != null)
-                        break;
-                }
-                if (method != null)
-                    break;
+            try {
+                object? target = method.IsStatic ? null : Activator.CreateInstance(candidate);
+                method.Invoke(target, [services]);
+                return true;
+            } catch (Exception ex) {
+                warnings.Add($"'{ConfigureServicesMethod}' threw an exception: {ex.InnerException?.Message ?? ex.Message}");
+                return false;
             }
         }
 
-        if (method == null)
-            return false;
+        warnings.AddRange(nearMisses);
+        return false;
+    }
 
+    /// <summary>
+    /// Fallback for real-world apps that don't expose a 'ConfigureServices(IServiceCollection)'
+    /// method at all — instead they have a method that builds and returns a host builder
+    /// (e.g. 'private static WebApplicationBuilder CreateSystemBuilder(string[] args)').
+    ///
+    /// Invoked entirely via reflection so the hot reloader never needs a compile-time reference
+    /// to ASP.NET Core: find the builder-returning method, call it, add HttpResults to its
+    /// 'Services' property if present, call '.Build()', and read '.Services' off the result.
+    /// Deliberately stops short of '.Run()' or any middleware/hosting setup — only the DI
+    /// container is needed for rendering.
+    /// </summary>
+    private static (IServiceProvider? Provider, string[] Warnings) BuildFromWebHostFactory(
+            List<Assembly> assemblies, string? explicitRegistrar, HttpResults? httpResults) {
+        var warnings = new List<string>();
+
+        foreach (Type candidate in FindCandidateTypes(assemblies, explicitRegistrar)) {
+            MethodInfo? factory = FindBuilderFactory(candidate);
+            if (factory == null)
+                continue;
+
+            try {
+                object?[] args = factory.GetParameters().Length == 1 ? [Array.Empty<string>()] : [];
+                object? target = factory.IsStatic ? null : Activator.CreateInstance(candidate);
+                object? builder = factory.Invoke(target, args);
+                if (builder == null)
+                    continue;
+
+                if (httpResults != null &&
+                    builder.GetType().GetProperty("Services")?.GetValue(builder) is IServiceCollection builderServices)
+                    builderServices.AddSingleton(httpResults);
+
+                MethodInfo? buildMethod = builder.GetType().GetMethod("Build", BindingFlags.Public | BindingFlags.Instance, Type.EmptyTypes);
+                object? host = buildMethod?.Invoke(builder, null);
+                if (host == null) {
+                    warnings.Add($"'{candidate.FullName}.{factory.Name}' returned a builder with no parameterless 'Build()' method.");
+                    continue;
+                }
+
+                if (host.GetType().GetProperty("Services")?.GetValue(host) is IServiceProvider provider)
+                    return (provider, [.. warnings]);
+
+                warnings.Add($"'{candidate.FullName}.{factory.Name}().Build()' produced a host with no 'Services' property.");
+            } catch (Exception ex) {
+                warnings.Add($"Failed to build services from '{candidate.FullName}.{factory.Name}': {ex.InnerException?.Message ?? ex.Message}");
+            }
+        }
+
+        return (null, [.. warnings]);
+    }
+
+    // A method that takes no arguments (or just 'string[] args') and returns something whose
+    // name looks like a builder (WebApplicationBuilder, HostApplicationBuilder, IHostBuilder...)
+    // and that itself exposes a parameterless 'Build()' — duck-typed so no ASP.NET Core
+    // reference is required at compile time.
+    private static MethodInfo? FindBuilderFactory(Type type) {
+        foreach (MethodInfo m in SafeGetMethods(type)) {
+            try {
+                if (m.ReturnType == typeof(void) || !m.ReturnType.Name.Contains("Builder", StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                ParameterInfo[] ps = m.GetParameters();
+                bool paramsOk = ps.Length == 0 || (ps.Length == 1 && ps[0].ParameterType == typeof(string[]));
+                if (!paramsOk)
+                    continue;
+
+                if (m.ReturnType.GetMethod("Build", BindingFlags.Public | BindingFlags.Instance, Type.EmptyTypes) != null)
+                    return m;
+            } catch {
+                // This method's signature references a type/assembly we can't resolve in this
+                // process (common in real-world Program/Startup classes with many unrelated
+                // methods) — skip it rather than letting the scan crash.
+            }
+        }
+        return null;
+    }
+
+    // Looks for methods that resemble a registration entry point (single parameter that is
+    // or looks like an IServiceCollection/builder) but don't match the expected signature —
+    // surfaced as a warning so the target project's owner gets an actionable hint instead of
+    // a generic "no registrar found".
+    private static IEnumerable<string> FindNearMisses(Type type) {
+        var results = new List<string>();
+        foreach (MethodInfo m in SafeGetMethods(type)) {
+            try {
+                ParameterInfo[] parameters = m.GetParameters();
+                if (parameters.Length != 1)
+                    continue;
+
+                string paramName = parameters[0].ParameterType.Name;
+                if (paramName.Contains("ServiceCollection") || paramName.Contains("Builder"))
+                    results.Add($"Found '{type.FullName}.{m.Name}({paramName})' — " +
+                                $"unsupported signature, expected '{ConfigureServicesMethod}(IServiceCollection)'.");
+            } catch {
+                // Same as above — a signature we can't reflect over is not a near-miss we can
+                // report on, so just skip it.
+            }
+        }
+        return results;
+    }
+
+    // GetMethods() itself can throw if the type's base type or interfaces reference an
+    // unresolvable assembly.
+    private static MethodInfo[] SafeGetMethods(Type type) {
         try {
-            method.Invoke(null, [services]);
-            return true;
-        } catch (Exception ex) {
-            warnings.Add($"'{ConfigureServicesMethod}' threw an exception: {ex.InnerException?.Message ?? ex.Message}");
-            return false;
+            return type.GetMethods(RegistrarMethodFlags);
+        } catch {
+            return [];
+        }
+    }
+
+    // Shared candidate-type resolution for both registrar conventions: an explicit
+    // fully-qualified type name if configured, otherwise ScryberPluginRegistrar / Program /
+    // Startup (in priority order) across all loaded assemblies.
+    private static IEnumerable<Type> FindCandidateTypes(List<Assembly> assemblies, string? explicitRegistrar) {
+        if (!string.IsNullOrEmpty(explicitRegistrar)) {
+            Type? type = assemblies.Select(a => a.GetType(explicitRegistrar)).FirstOrDefault(t => t != null);
+            if (type != null)
+                yield return type;
+            yield break;
+        }
+
+        // Convention priority:
+        // 1. ScryberPluginRegistrar   — explicit hot-reloader opt-in
+        // 2. Program                  — partial class Program pattern (native, zero new files)
+        // 3. Startup                  — classic ASP.NET Core Startup.cs pattern
+        string[] candidateNames = [RegistrarClassName, "Program", "Startup"];
+
+        foreach (string name in candidateNames) {
+            foreach (Assembly assembly in assemblies) {
+                // GetTypes() throws ReflectionTypeLoadException when a transitive dependency
+                // DLL is missing (e.g. a mismatched Microsoft.IdentityModel.Tokens version).
+                // Fall back to the partial type list so the scan still works.
+                Type[] types;
+                try {
+                    types = assembly.GetTypes();
+                } catch (ReflectionTypeLoadException ex) {
+                    types = ex.Types.Where(t => t != null).ToArray()!;
+                }
+
+                Type? candidate = types.FirstOrDefault(t => t.Name == name);
+                if (candidate != null)
+                    yield return candidate;
+            }
         }
     }
 }

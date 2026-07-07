@@ -2,6 +2,8 @@
 
 Scryber Hot Reloader can load services from your existing .NET application at preview time, so the C# model you write in the **Model** tab can receive real dependencies — data services, business logic, DB contexts — via constructor injection, exactly as they would in your main app. No changes to your project are required.
 
+**Requirement:** the hot reloader currently targets **.NET 10**. Your app's target framework must be **.NET 10 or earlier** — a plugin assembly built for a *newer* major .NET version than the hot reloader cannot be loaded, full stop (this is a CLR-level limitation: the runtime hosting the process is a fixed major version, and no amount of assembly-resolution logic can load a newer-major-version assembly into an older-major-version process). If your app targets a newer .NET version than the hot reloader, you'll see a `System.Runtime` (or similar core BCL assembly) `FileNotFoundException` — that's this constraint, not a bug in your app.
+
 ---
 
 ## How It Works
@@ -10,8 +12,9 @@ On every **Ctrl+S**:
 
 1. Plugin assemblies are loaded from `scryber-plugins.json` (if present), making your types available to Roslyn and the IntelliSense engine.
 2. The **Startup tab** is compiled. If it contains a `ConfigureServices(IServiceCollection)` method, that builds the DI container.
-3. If the Startup tab is empty, the hot reloader falls back to the **convention registrar** — scanning loaded assemblies for `ScryberPluginRegistrar`, `Program`, or `Startup` classes.
-4. The Model tab is compiled and instantiated through the DI container — constructor parameters resolve automatically.
+3. If the Startup tab is empty, the hot reloader falls back to the **convention registrar** — scanning loaded assemblies for `ScryberPluginRegistrar`, `Program`, or `Startup` classes for a `ConfigureServices(IServiceCollection)` method.
+4. If none of those exist either — the common case for a real ASP.NET Core app — it falls back further to a **builder factory**: any method on those same classes that builds and returns something shaped like `WebApplicationBuilder` (has a `Services` property and a parameterless `Build()`). If found, it's invoked, `.Build()` is called, and `.Services` becomes the DI container. This is how apps that construct their DI graph in `Program.cs` via `WebApplication.CreateBuilder()` work without any changes at all.
+5. The Model tab is compiled and instantiated through the DI container — constructor parameters resolve automatically.
 
 ---
 
@@ -61,15 +64,55 @@ The Startup tab is compiled fresh on every Ctrl+S. Changes take effect immediate
 
 ### Alternative — Convention registrar
 
-If you would rather keep the registration inside your own codebase, the hot reloader will automatically discover a `ConfigureServices(IServiceCollection)` static method on any of these classes in the loaded assemblies, checked in this order:
+If you would rather keep the registration inside your own codebase, the hot reloader will automatically discover a `ConfigureServices(IServiceCollection)` method on any of these classes in the loaded assemblies, checked in this order:
 
 | Class name | When to use |
 |---|---|
 | `ScryberPluginRegistrar` | Explicit opt-in — add a new class to any assembly |
-| `Program` | Add a `public static partial class Program` block to your existing `Program.cs` |
+| `Program` | Your existing `Program.cs`, including `internal partial class Program` — no visibility changes needed |
 | `Startup` | Existing `Startup.cs` in older-style ASP.NET Core projects — works automatically |
 
+The method can be `public` or `private`, `static` or instance (instance registrars are
+instantiated via a parameterless constructor). This means an existing
+`private static void ConfigureServices(IServiceCollection services)` on your app's `Program`
+class is picked up as-is — no changes required.
+
+If a class with a matching name is found but its registration method doesn't match this
+signature (e.g. it takes a `WebApplicationBuilder` instead of `IServiceCollection`), the warning
+dialog names the method and its actual signature so you know exactly what to change.
+
 The Startup tab always takes priority over the convention registrar.
+
+### Alternative — Builder factory (real ASP.NET Core apps)
+
+If your app builds services on `WebApplicationBuilder` (or `HostApplicationBuilder`) inside
+`Program.cs`, rather than through a `ConfigureServices(IServiceCollection)` method — the standard
+`WebApplication.CreateBuilder(args)` pattern — no changes are needed at all. The hot reloader
+looks for a method on `ScryberPluginRegistrar`/`Program`/`Startup` that returns a builder-shaped
+object and invokes it directly:
+
+```csharp
+internal partial class Program
+{
+    private static WebApplicationBuilder CreateSystemBuilder(string[] args)
+    {
+        var builder = WebApplication.CreateBuilder(args);
+        builder.Services.AddTransient<IBusinessService, BusinessService>();
+        // ... your existing registration methods ...
+        return builder;
+    }
+}
+```
+
+The method can be `private`, `internal`, or `public`, static or instance. The hot reloader calls
+it, then `.Build()` on the result, and takes `.Services` as the DI container — it never calls
+`.Run()` or touches middleware/hosting setup, so `AddControllers`, `AddSignalR`, authentication,
+etc. are harmless to leave in place.
+
+**Note:** startup hooks that run separately from builder construction (e.g. database migrations
+run after `.Build()` in your own `Program.cs`) are **not** executed by the hot reloader — only
+the builder-construction method itself is called. This is intentional: a test/preview tool
+silently migrating a database on every Ctrl+S would be a footgun.
 
 ---
 
